@@ -1,0 +1,468 @@
+#!/bin/bash
+# System Setup - Interactive installer for takeout-script services
+# Handles: Environment config, rclone, Chadburn, Immich API, HA API, Copilot auth, Docker services
+# Run manually when setting up a new system or reconfiguring
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Find the .env file
+# 1. Check if /root/.env is a symlink and follow it
+# 2. Fall back to parent directory of SCRIPT_DIR + shell_startup/.env
+if [ -L "/root/.env" ]; then
+    ENV_FILE="$(readlink -f /root/.env)"
+elif [ -f "$(dirname "$SCRIPT_DIR")/shell_startup/.env" ]; then
+    ENV_FILE="$(dirname "$SCRIPT_DIR")/shell_startup/.env"
+elif [ -f "$(dirname "$SCRIPT_DIR")/.env" ]; then
+    ENV_FILE="$(dirname "$SCRIPT_DIR")/.env"
+else
+    ENV_FILE="$(dirname "$SCRIPT_DIR")/shell_startup/.env"
+fi
+
+# Default paths
+APP_ROOT="${APP_ROOT:-/mnt/pool/appdata}"
+RCLONE_CONFIG_DIR="$APP_ROOT/rclone"
+CHADBURN_COMPOSE_DIR="$APP_ROOT/chadburn"
+AUTH_DIR="/root/.auth"
+
+# Application name
+APP_NAME="takeout-script"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+print_header() {
+    echo ""
+    echo -e "${BLUE}=========================================="
+    echo "$1"
+    echo -e "==========================================${NC}"
+    echo ""
+}
+
+print_success() { echo -e "${GREEN}✓ $1${NC}"; }
+print_warning() { echo -e "${YELLOW}⚠ $1${NC}"; }
+print_error() { echo -e "${RED}✗ $1${NC}"; }
+
+prompt_with_default() {
+    local prompt="$1"
+    local default="$2"
+    local var_name="$3"
+    local is_password="${4:-false}"
+    
+    if [ "$is_password" = "true" ]; then
+        echo -n "$prompt [$default]: "
+        read -s value
+        echo ""
+    else
+        read -p "$prompt [$default]: " value
+    fi
+    
+    value="${value:-$default}"
+    eval "$var_name='$value'"
+}
+
+prompt_required() {
+    local prompt="$1"
+    local var_name="$2"
+    local is_password="${3:-false}"
+    local value=""
+    
+    while [ -z "$value" ]; do
+        if [ "$is_password" = "true" ]; then
+            echo -n "$prompt: "
+            read -s value
+            echo ""
+        else
+            read -p "$prompt: " value
+        fi
+        [ -z "$value" ] && print_error "This field is required"
+    done
+    
+    eval "$var_name='$value'"
+}
+
+confirm() {
+    local prompt="$1"
+    local default="${2:-y}"
+    local yn_hint="Y/n"
+    [ "$default" = "n" ] && yn_hint="y/N"
+    
+    read -p "$prompt [$yn_hint]: " response
+    response="${response:-$default}"
+    [[ "$response" =~ ^[yY] ]]
+}
+
+get_current_ip() {
+    hostname -I 2>/dev/null | awk '{print $1}' || \
+    ip route get 1 2>/dev/null | awk '{print $7; exit}' || \
+    echo "192.168.1.216"
+}
+
+generate_password() {
+    tr -dc 'A-Za-z0-9!@#$%^&*' </dev/urandom | head -c "${1:-16}"
+}
+
+# Get current user info for docker
+CURRENT_UID=$(id -u)
+CURRENT_GID=$(id -g)
+
+print_header "System Setup - Takeout Script Configuration"
+
+echo "This script will set up:"
+echo "  1. Environment configuration (.env file)"
+echo "  2. rclone configuration for Google Drive"
+echo "  3. Chadburn scheduler"
+echo "  4. Immich API key"
+echo "  5. Home Assistant API key"
+echo "  6. GitHub Copilot CLI authentication"
+echo "  7. Docker services"
+echo ""
+
+# Check if running as root
+if [ "$EUID" -ne 0 ]; then 
+    print_error "This script must be run as root"
+    exit 1
+fi
+
+# Ensure auth directory exists
+mkdir -p "$AUTH_DIR"
+chmod 700 "$AUTH_DIR"
+
+# ============================================================
+# Step 1: Environment Configuration
+# ============================================================
+print_header "Step 1: Environment Configuration"
+
+DETECTED_IP=$(get_current_ip)
+echo "Detected server IP: $DETECTED_IP"
+echo ""
+
+# Load existing .env if present
+if [ -f "$ENV_FILE" ]; then
+    print_warning "Existing .env file found. Loading current values..."
+    source <(grep -v '^#' "$ENV_FILE" | grep -v '^$' | sed 's/^/export /')
+fi
+
+prompt_with_default "Server IP address" "${SERVER_IP:-$DETECTED_IP}" "SERVER_IP"
+prompt_with_default "Immich server URL" "${IMMICH_SERVER:-http://$SERVER_IP:2283}" "IMMICH_SERVER"
+prompt_with_default "Home Assistant URL" "${HA_URL:-http://192.168.1.179:8123}" "HA_URL"
+
+DEFAULT_VNC_PASSWORD="${VNC_PASSWORD:-$(generate_password 16)}"
+prompt_with_default "VNC password for login-helper" "$DEFAULT_VNC_PASSWORD" "VNC_PASSWORD" "true"
+prompt_with_default "Google Drive path" "${GDRIVE_PATH:-/mnt/user/jumpdrive/gdrive}" "GDRIVE_PATH"
+prompt_with_default "Imports path" "${IMPORTS_PATH:-/mnt/user/jumpdrive/imports}" "IMPORTS_PATH"
+prompt_with_default "rclone config path" "${RCLONE_CONFIG:-$RCLONE_CONFIG_DIR/rclone.conf}" "RCLONE_CONFIG"
+# Create directories
+echo ""
+echo "Creating directories..."
+mkdir -p "$GDRIVE_PATH" "$IMPORTS_PATH" "$IMPORTS_PATH/metadata" "$(dirname "$RCLONE_CONFIG")"
+print_success "Directories created"
+
+# Write .env file
+echo ""
+echo "Writing .env file..."
+cat > "$ENV_FILE" << EOF
+# Takeout Script Configuration
+# Generated by system_setup on $(date)
+
+# Server Configuration
+SERVER_IP=$SERVER_IP
+IMMICH_SERVER=$IMMICH_SERVER
+HA_URL=$HA_URL
+VNC_PASSWORD='$VNC_PASSWORD'
+
+# Storage Paths
+GDRIVE_PATH=$GDRIVE_PATH
+IMPORTS_PATH=$IMPORTS_PATH
+STATE_PATH=$STATE_PATH
+
+# rclone Configuration
+RCLONE_CONFIG=$RCLONE_CONFIG
+RCLONE_REMOTE=gdrive:
+RCLONE_TAKEOUT_PATH=gdrive:Takeout
+
+# Docker Image Versions
+kasmweb_version=$kasmweb_version
+
+# Optional: Google password for automated login (leave empty to skip)
+GOOGLE_PASSWORD=
+EOF
+
+print_success ".env file written to $ENV_FILE"
+
+# ============================================================
+# Step 2: rclone Configuration
+# ============================================================
+print_header "Step 2: rclone Configuration for Google Drive"
+
+mkdir -p "$(dirname "$RCLONE_CONFIG")"
+
+CONFIGURE_RCLONE=false
+if [ -f "$RCLONE_CONFIG" ] && grep -q "\[gdrive\]" "$RCLONE_CONFIG" 2>/dev/null; then
+    print_warning "rclone gdrive remote already configured"
+    confirm "Reconfigure rclone gdrive remote?" "n" && CONFIGURE_RCLONE=true
+else
+    CONFIGURE_RCLONE=true
+fi
+
+if [ "$CONFIGURE_RCLONE" = "true" ]; then
+    echo ""
+    echo "To configure Google Drive access, you need OAuth credentials:"
+    echo ""
+    echo "1. Go to: https://console.cloud.google.com/apis/credentials"
+    echo "2. Create a new OAuth 2.0 Client ID (Desktop application)"
+    echo "3. Note the Client ID and Client Secret"
+    echo ""
+    
+    if confirm "Do you have your Google OAuth credentials ready?" "y"; then
+        prompt_required "Enter Google OAuth Client ID" "RCLONE_CLIENT_ID"
+        prompt_required "Enter Google OAuth Client Secret" "RCLONE_CLIENT_SECRET" "true"
+        
+        # Install rclone if needed
+        if ! command -v rclone &> /dev/null; then
+            echo "Installing rclone..."
+            curl -s https://rclone.org/install.sh | bash
+        fi
+        
+        # Create initial config
+        cat > "$RCLONE_CONFIG" << EOF
+[gdrive]
+type = drive
+client_id = $RCLONE_CLIENT_ID
+client_secret = $RCLONE_CLIENT_SECRET
+scope = drive
+EOF
+        
+        echo ""
+        echo "Running rclone authorization..."
+        rclone config reconnect gdrive: --config "$RCLONE_CONFIG" && \
+            print_success "rclone configured successfully" || \
+            print_error "rclone configuration failed. Run: rclone config --config $RCLONE_CONFIG"
+    else
+        print_warning "Skipping rclone configuration"
+    fi
+fi
+
+# ============================================================
+# Step 3: Chadburn Scheduler
+# ============================================================
+print_header "Step 3: Chadburn Scheduler Setup"
+
+CHADBURN_RUNNING=$(docker ps --filter "name=chadburn" --format "{{.Names}}" 2>/dev/null || true)
+CHADBURN_EXISTS=$(docker ps -a --filter "name=chadburn" --format "{{.Names}}" 2>/dev/null || true)
+
+if [ -n "$CHADBURN_RUNNING" ]; then
+    print_success "Chadburn is already running"
+elif [ -n "$CHADBURN_EXISTS" ]; then
+    print_warning "Chadburn container exists but is not running"
+    confirm "Start Chadburn?" "y" && docker start chadburn && print_success "Chadburn started"
+else
+    print_warning "Chadburn is not installed"
+    
+    if confirm "Install and start Chadburn scheduler?" "y"; then
+        mkdir -p "$CHADBURN_COMPOSE_DIR"
+        
+        cat > "$CHADBURN_COMPOSE_DIR/docker-compose.yml" << EOF
+# Chadburn - Docker-native cron scheduler
+# Generated by system_setup on $(date)
+
+services:
+  chadburn:
+    image: premoweb/chadburn:latest
+    container_name: chadburn
+    user: "${CURRENT_UID}:${CURRENT_GID}"
+    restart: unless-stopped
+    command: daemon
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    network_mode: bridge
+    labels:
+      - "net.unraid.docker.managed=composeman"
+EOF
+        
+        echo "Starting Chadburn..."
+        cd "$CHADBURN_COMPOSE_DIR" && docker compose up -d && print_success "Chadburn started" || print_error "Failed to start Chadburn"
+        cd "$SCRIPT_DIR"
+    fi
+fi
+
+# ============================================================
+# Step 4: Immich API Key
+# ============================================================
+print_header "Step 4: Immich API Key Configuration"
+
+API_KEY_FILE="$AUTH_DIR/.immich_api_key"
+
+SKIP_API_KEY=false
+if [ -f "$API_KEY_FILE" ] && [ -s "$API_KEY_FILE" ]; then
+    print_warning "Immich API key already exists"
+    confirm "Generate a new API key?" "n" || SKIP_API_KEY=true
+fi
+
+if [ "$SKIP_API_KEY" != "true" ]; then
+    echo "Checking Immich server connectivity..."
+    
+    if curl -s --connect-timeout 5 "$IMMICH_SERVER/api/server/ping" | grep -q "pong"; then
+        print_success "Immich server is reachable"
+        
+        prompt_required "Enter Immich admin email" "IMMICH_EMAIL"
+        prompt_required "Enter Immich admin password" "IMMICH_PASSWORD" "true"
+        
+        echo "Authenticating with Immich..."
+        
+        LOGIN_RESPONSE=$(curl -s -X POST "$IMMICH_SERVER/api/auth/login" \
+            -H "Content-Type: application/json" \
+            -d "{\"email\": \"$IMMICH_EMAIL\", \"password\": \"$IMMICH_PASSWORD\"}")
+        
+        ACCESS_TOKEN=$(echo "$LOGIN_RESPONSE" | grep -o '"accessToken":"[^"]*"' | cut -d'"' -f4)
+        
+        if [ -n "$ACCESS_TOKEN" ]; then
+            print_success "Authentication successful"
+            
+            API_KEY_RESPONSE=$(curl -s -X POST "$IMMICH_SERVER/api/api-keys" \
+                -H "Content-Type: application/json" \
+                -H "Authorization: Bearer $ACCESS_TOKEN" \
+                -d "{\"name\": \"$APP_NAME\"}")
+            
+            API_KEY=$(echo "$API_KEY_RESPONSE" | grep -o '"secret":"[^"]*"' | cut -d'"' -f4)
+            
+            if [ -n "$API_KEY" ]; then
+                echo "$API_KEY" > "$API_KEY_FILE"
+                chmod 600 "$API_KEY_FILE"
+                print_success "API key saved to $API_KEY_FILE"
+            else
+                print_error "Failed to create API key"
+                echo "Manually create at: $IMMICH_SERVER/user-settings?isOpen=api-keys"
+            fi
+        else
+            print_error "Authentication failed"
+        fi
+    else
+        print_warning "Cannot reach Immich server at $IMMICH_SERVER"
+    fi
+fi
+
+# ============================================================
+# Step 5: Home Assistant API Key
+# ============================================================
+print_header "Step 5: Home Assistant API Key Configuration"
+
+HA_TOKEN_FILE="$AUTH_DIR/.ha_api_key"
+
+echo "Home Assistant Long-Lived Access Token is used for:"
+echo "  - copilot-system-monitor: Check HA status and updates"
+echo "  - Notifications via HA (optional)"
+echo ""
+
+SKIP_HA_KEY=false
+if [ -f "$HA_TOKEN_FILE" ] && [ -s "$HA_TOKEN_FILE" ]; then
+    print_warning "Home Assistant API key already exists"
+    confirm "Replace existing token?" "n" || SKIP_HA_KEY=true
+fi
+
+if [ "$SKIP_HA_KEY" != "true" ]; then
+    echo "Checking Home Assistant connectivity..."
+    
+    if curl -s --connect-timeout 5 "$HA_URL/api/" 2>/dev/null | grep -q "API running"; then
+        print_success "Home Assistant is reachable"
+    else
+        print_warning "Cannot reach Home Assistant at $HA_URL (may require auth)"
+    fi
+    
+    if confirm "Configure Home Assistant API token?" "y"; then
+        echo ""
+        echo "To create a Long-Lived Access Token:"
+        echo "1. Go to: $HA_URL/profile/security"
+        echo "2. Scroll to 'Long-Lived Access Tokens'"
+        echo "3. Click 'Create Token'"
+        echo "4. Name it '$APP_NAME'"
+        echo "5. Copy the token (shown only once)"
+        echo ""
+        
+        prompt_required "Paste your Home Assistant token" "HA_TOKEN" "true"
+        
+        # Verify the token works
+        echo "Verifying token..."
+        if curl -s -H "Authorization: Bearer $HA_TOKEN" "$HA_URL/api/config" | grep -q '"version"'; then
+            echo "$HA_TOKEN" > "$HA_TOKEN_FILE"
+            chmod 600 "$HA_TOKEN_FILE"
+            print_success "Home Assistant token saved to $HA_TOKEN_FILE"
+        else
+            print_warning "Token verification failed, but saving anyway"
+            echo "$HA_TOKEN" > "$HA_TOKEN_FILE"
+            chmod 600 "$HA_TOKEN_FILE"
+        fi
+    else
+        print_warning "Skipping Home Assistant configuration"
+    fi
+fi
+
+# ============================================================
+# Step 6: GitHub Copilot CLI Authentication
+# ============================================================
+print_header "Step 6: GitHub Copilot CLI Authentication"
+
+COPILOT_TOKEN_FILE="$AUTH_DIR/.copilot-token"
+
+echo "The copilot-system-monitor uses GitHub Copilot CLI for AI-powered analysis."
+echo "This requires a GitHub PAT with 'Copilot Requests' permission."
+echo ""
+
+SKIP_COPILOT=false
+if [ -f "$COPILOT_TOKEN_FILE" ] && [ -s "$COPILOT_TOKEN_FILE" ]; then
+    print_warning "Copilot token already exists"
+    confirm "Replace existing token?" "n" || SKIP_COPILOT=true
+fi
+
+if [ "$SKIP_COPILOT" != "true" ]; then
+    if confirm "Configure GitHub Copilot CLI authentication?" "y"; then
+        echo ""
+        echo "To create a token with Copilot access:"
+        echo "1. Go to: https://github.com/settings/personal-access-tokens/new"
+        echo "2. Name it '$APP_NAME-copilot'"
+        echo "3. Under 'Account permissions' -> 'Copilot' -> 'Read-only'"
+        echo "4. Generate and copy the token"
+        echo ""
+        
+        prompt_required "Paste your GitHub PAT" "COPILOT_TOKEN" "true"
+        
+        echo "$COPILOT_TOKEN" > "$COPILOT_TOKEN_FILE"
+        chmod 600 "$COPILOT_TOKEN_FILE"
+        print_success "Copilot token saved to $COPILOT_TOKEN_FILE"
+    fi
+fi
+
+
+# ============================================================
+# Summary
+# ============================================================
+print_header "Setup Complete!"
+
+echo "Configuration Summary:"
+echo "  Server IP:        $SERVER_IP"
+echo "  Immich Server:    $IMMICH_SERVER"
+echo "  Home Assistant:   $HA_URL"
+echo "  Google Drive:     $GDRIVE_PATH"
+echo "  Imports:          $IMPORTS_PATH"
+echo ""
+
+echo "Auth Tokens:"
+[ -f "$API_KEY_FILE" ] && print_success "Immich API key: $API_KEY_FILE" || print_warning "Immich API key: Not configured"
+[ -f "$HA_TOKEN_FILE" ] && print_success "Home Assistant token: $HA_TOKEN_FILE" || print_warning "Home Assistant token: Not configured"
+[ -f "$COPILOT_TOKEN_FILE" ] && print_success "GitHub Copilot token: $COPILOT_TOKEN_FILE" || print_warning "GitHub Copilot token: Not configured"
+echo ""
+
+echo ""
+echo "Web Interfaces:"
+echo "  Metadata Viewer:  http://$SERVER_IP:5050"
+echo "  Login Helper VNC: http://$SERVER_IP:6901"
+echo "  Home Assistant:   $HA_URL"
+echo "  Immich:           $IMMICH_SERVER"
+echo ""
+
+print_success "System setup complete!"

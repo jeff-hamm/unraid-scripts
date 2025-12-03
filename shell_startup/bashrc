@@ -16,6 +16,9 @@ fi
 # Docker aliases
 alias d='docker'
 alias dc='docker-compose'
+alias ln="pln"
+
+# pln is available in /usr/local/bin (created by shell_startup)
 
 # Docker-compose helper function
 # Usage: dcr <service> [service2 ...]

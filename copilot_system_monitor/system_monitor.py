@@ -229,6 +229,7 @@ def run_copilot(prompt: str, timestamp: str) -> tuple[int, str]:
                 "-p", prompt,
                 "--model", COPILOT_MODEL,
                 "--allow-all-tools",
+                "--allow-all-paths",
                 "--deny-tool", "shell(rm -rf)",
             ],
             stdout=subprocess.PIPE,
@@ -328,7 +329,7 @@ def main():
     if status in ["FAILURE", "AUTH_REQUIRED"]:
         importance = "alert" if status == "FAILURE" else "warning"
         send_notification(
-            event="vscode-monitor",
+            event="copilot-system-monitor",
             subject=f"Takeout Script: {status}",
             description=diagnosis[:200] if diagnosis else f"Status: {status}",
             importance=importance,

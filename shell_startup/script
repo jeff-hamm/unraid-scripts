@@ -14,68 +14,21 @@ STARTUP_SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 SCRIPTS_DIR="$(dirname "$STARTUP_SCRIPT_DIR")"
 source ${SCRIPTS_DIR}/.env
 
-git config --global user.email "$GITHUB_EMAIL"                                      
-git config --global user.name "$GITHUB_USER_NAME"    
+git config --global user.email "$GIT_AUTHOR_EMAIL"
+git config --global user.name "$GIT_AUTHOR_NAME"
 # === SYMLINKS FOR PERSISTENT STORAGE ===
 echo "Creating symlinks..."
 
-# Define symlinks as "source,target" pairs
-SYMLINKS=(
-    "$APP_ROOT/home/.vscode-server,/root/.vscode-server"
-    "$APP_ROOT/home/.docker,/root/.docker"
-    "$APP_ROOT,/root/appdata"
-    "/boot/config,/root/config"
-    "$SCRIPTS_DIR,/root/scripts"
-    "$SCRIPTS_DIR/ai_script_monitor/script,/usr/local/bin/ai-script-monitor"
-    "$SCRIPTS_DIR/fix_disabled_disk/script,/usr/local/bin/fix-disabled-disk"
-    "$SCRIPTS_DIR/immich_jobs/script,/usr/local/bin/immich-jobs"
-    "$SCRIPTS_DIR/sd_import/sd-card-import.sh,/usr/local/bin/sd-card-import"
-    "$SCRIPTS_DIR/sd_import/immich-go-upload.sh,/usr/local/bin/immich-go-upload"
-    "$SCRIPTS_DIR/sd_import/install-sd-import.sh,/usr/local/bin/install-sd-import"
-    "$SCRIPTS_DIR/copilot_system_monitor/run.sh,/usr/local/bin/copilot-system-monitor"
-    "$STARTUP_SCRIPT_DIR/bashrc,/root/.bashrc"
-    "$STARTUP_SCRIPT_DIR/shell_startup_env.sh,/etc/profile.d/shell_startup_env.sh"
-    "$STARTUP_SCRIPT_DIR/auth,/root/.auth"
-    "$STARTUP_SCRIPT_DIR/auth/.copilot-token,/root/.copilot-token"
-)
-
-for entry in "${SYMLINKS[@]}"; do
-    source="${entry%,*}"
-    target="${entry#*,}"
-    
-    if [[ -e "$source" ]]; then
-        # Check if target is in a bin directory (needs to be executable)
-        if [[ "$target" == */bin/* ]]; then
-            # Resolve to canonical path (in case source is via symlink)
-            canonical_source="$(readlink -f "$source")"
-            # Detect interpreter from shebang
-            shebang=$(head -1 "$canonical_source" 2>/dev/null)
-            case "$shebang" in
-                *python3*|*python*)
-                    interpreter="python3" ;;
-                *bash*)
-                    interpreter="bash" ;;
-                *sh*)
-                    interpreter="sh" ;;
-                *)
-                    interpreter="bash" ;;  # default
-            esac
-            # Create wrapper script (FAT32 boot drive doesn't preserve execute bits)
-            rm -f "$target"  # Remove any existing symlink/file
-            cat > "$target" << EOF
+# Bootstrap pln first (can't use pln to create itself)
+cat > /usr/local/bin/pln << 'EOF'
 #!/bin/bash
-exec $interpreter "$canonical_source" "\$@"
+exec bash "/boot/config/plugins/user.scripts/scripts/shell_startup/pln.sh" "$@"
 EOF
-            chmod +x "$target"
-            echo "  $target -> $canonical_source (wrapper: $interpreter)"
-        else
-            ln -sf "$source" "$target"
-            echo "  $target -> $source"
-        fi
-    else
-        echo "  SKIP: $source (not found)"
-    fi
-done
+chmod +x /usr/local/bin/pln
+echo "  /usr/local/bin/pln -> pln.sh (wrapper)"
+
+# Use pln to apply all symlinks from config file
+pln --apply
 # === FIX /etc/profile ===
 # Unraid's default profile has 'cd $HOME' which breaks VS Code Remote SSH
 echo "Fixing /etc/profile..."
@@ -84,6 +37,15 @@ if grep -q '^cd \$HOME$' /etc/profile 2>/dev/null; then
     echo "  Removed 'cd \$HOME' from /etc/profile"
 else
     echo "  /etc/profile already fixed"
+fi
+
+# Increase /var/log tmpfs to 1GB (default 128MB fills up quickly)
+current_size=$(df /var/log | awk 'NR==2 {print $2}')
+if [[ "$current_size" -lt 1000000 ]]; then
+    mount -o remount,size=1G /var/log
+    echo "  Increased /var/log to 1GB"
+else
+    echo "  /var/log already sized appropriately"
 fi
 
 echo ""
