@@ -1,0 +1,21 @@
+# Environment files with secrets
+.env
+
+# Prompt file (contains system-specific info)
+copilot_prompt.md
+
+# State directory
+state/
+
+# Logs
+logs/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+
+# IDE
+.vscode/
+.idea/
+*.swp

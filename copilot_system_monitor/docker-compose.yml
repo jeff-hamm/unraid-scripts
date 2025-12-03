@@ -1,0 +1,57 @@
+services:
+  copilot-system-monitor:
+    build:
+      context: .
+      args:
+        COPILOT_VERSION: ${COPILOT_VERSION:-latest}
+    image: copilot-system-monitor:latest
+    container_name: copilot-system-monitor
+    restart: "no"
+    user: "0:0"
+    pid: host
+    privileged: true
+    environment:
+      - LOG_DIR=/app/logs
+      - GH_TOKEN=${GH_TOKEN:-}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - GIT_AUTHOR_NAME=${GIT_AUTHOR_NAME:-Copilot Agent}
+      - GIT_AUTHOR_EMAIL=${GIT_AUTHOR_EMAIL:-copilot@users.noreply.github.com}
+      - GIT_COMMITTER_NAME=${GIT_COMMITTER_NAME:-Copilot Agent}
+      - GIT_COMMITTER_EMAIL=${GIT_COMMITTER_EMAIL:-copilot@users.noreply.github.com}
+      - COPILOT_MODEL=${COPILOT_MODEL:-claude-sonnet-4.5}
+      - COPILOT_VERSION=${COPILOT_VERSION:-}
+      - UNRAID_NOTIFY=/unraid/notify
+      - APP_NAME=copilot-system-monitor
+      - APP_ROOT=${APP_ROOT:-/mnt/pool/appdata}
+      - FILEBROWSER_BASE_URL=${FILEBROWSER_BASE_URL:-}
+      - FILEBROWSER_ANALYSIS_PATH=${FILEBROWSER_ANALYSIS_PATH:-}
+      - HA_VM_NAME=hammassistant
+      - HA_URL=http://192.168.1.179:8123
+      - HA_TOKEN=${HA_TOKEN:-}
+      - IMMICH_API_KEY=${IMMICH_API_KEY:-}
+    volumes:
+      # Docker socket for container management
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Libvirt socket for VM management
+      - /var/run/libvirt/libvirt-sock:/var/run/libvirt/libvirt-sock:ro
+      # Host system info
+      - /proc:/host/proc:ro
+      - /var/local/emhttp:/host/emhttp:ro
+      # Host SSH keys for VM access
+      - /root/.ssh:/root/.ssh:ro
+      # State directory
+      - ${STATE_DIR:-/mnt/pool/appdata/copilot-system-monitor/state}:/state:rw
+      # Docker-compose files for managed stacks
+      - ${APP_ROOT:-/mnt/pool/appdata}/takeout-script:/app/takeout-script:ro
+      - ${APP_ROOT:-/mnt/pool/appdata}/onedrive/docker:/app/onedrive:ro
+      - ${APP_ROOT:-/mnt/pool/appdata}/immich/docker:/app/immich:ro
+      - ${APP_ROOT:-/mnt/pool/appdata}/jumpflix/docker:/app/jumpflix:ro
+      - ${APP_ROOT:-/mnt/pool/appdata}/chadburn/docker-compose.yml:/app/chadburn/docker-compose.yml:rw
+      # Full appdata access (read-only)
+      - ${APP_ROOT:-/mnt/pool/appdata}:${APP_ROOT:-/mnt/pool/appdata}:ro
+      # Auth tokens directory
+      - /root/.auth:/root/.auth:ro
+      # Prompt file (mounted for easy editing without rebuild)
+      - ./copilot_prompt.md:/app/copilot_prompt.md:ro
+    working_dir: /app
+    network_mode: bridge
