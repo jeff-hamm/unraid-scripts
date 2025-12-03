@@ -1,0 +1,5 @@
+#!/bin/bash
+# VS Code Monitor - User Script Wrapper
+# Calls the main run script in appdata
+
+/mnt/pool/appdata/vscode-monitor/run.sh "$@"

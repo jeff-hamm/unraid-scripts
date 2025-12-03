@@ -1,0 +1,29 @@
+#!/bin/bash
+# Gracefully stop the Unraid array with /mnt/user cleanup
+
+handle_mnt_user_not_empty() {
+    if [[ -d "/mnt/user" ]]; then
+        local total=$(find /mnt/user -mindepth 1 2>/dev/null | wc -l)
+        if [[ $total -gt 0 ]]; then
+            echo "WARNING: /mnt/user has $total items!"
+            find /mnt/user -mindepth 1 -maxdepth 2 2>/dev/null | head -20
+            read -p "Remove to allow array stop? (y/N): " response
+            [[ "$response" =~ ^[Yy]$ ]] && rm -rf /mnt/user/* 2>/dev/null && echo "Removed."
+        fi
+    fi
+}
+
+echo "=== Stopping Array ==="
+docker stop $(docker ps -q) 2>/dev/null || true
+sleep 2
+umount -l /mnt/user 2>/dev/null || true
+handle_mnt_user_not_empty
+/usr/local/sbin/emcmd cmdStop=Stop
+
+echo -n "Waiting"
+for i in {1..60}; do
+    sleep 2
+    grep -q 'mdState="STARTED"' /var/local/emhttp/var.ini 2>/dev/null || { echo " Stopped."; exit 0; }
+    echo -n "."
+done
+echo " TIMEOUT"; exit 1

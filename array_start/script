@@ -1,0 +1,11 @@
+#!/bin/bash
+# Start the Unraid array
+echo "=== Starting Array ==="
+/usr/local/sbin/emcmd cmdStart=Start
+echo -n "Waiting"
+for i in {1..60}; do
+    sleep 2
+    grep -q 'mdState="STARTED"' /var/local/emhttp/var.ini 2>/dev/null && { echo " Started."; exit 0; }
+    echo -n "."
+done
+echo " TIMEOUT"; exit 1

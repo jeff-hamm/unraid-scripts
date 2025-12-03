@@ -1,0 +1,5 @@
+#!/bin/bash
+# Immich Jobs Manager - User Script Wrapper
+
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+exec python3 "$SCRIPT_DIR/immich_jobs.py" "$@"

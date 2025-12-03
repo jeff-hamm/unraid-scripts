@@ -1,0 +1,15 @@
+#!/bin/bash
+# SD Card Import - User Script
+# Install mode: Run with "setup" or "install" to set up udev rules
+# Import mode: Run with device name (e.g., "sdd") to import from SD card
+
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+
+case "${1:-}" in
+    install|setup)
+        exec bash "$SCRIPT_DIR/install-sd-import.sh"
+        ;;
+    *)
+        exec bash "$SCRIPT_DIR/sd-card-import.sh" "$@"
+        ;;
+esac

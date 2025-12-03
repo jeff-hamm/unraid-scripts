@@ -1,0 +1,5 @@
+#!/bin/bash
+# Restart the Unraid array
+/boot/config/plugins/user.scripts/scripts/array_stop/script
+sleep 3
+/boot/config/plugins/user.scripts/scripts/array_start/script

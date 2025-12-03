@@ -1,0 +1,108 @@
+#!/bin/bash
+#
+# Update TVGarden US Channel Playlist for Jellyfin
+# Fetches latest channel list from TVGarden GitHub and converts to M3U format
+#
+# Schedule: Daily at 3:00 AM
+#
+
+# Configuration
+JELLYFIN_CONFIG="/mnt/pool/appdata/jumpflix/jellyfin/config"
+M3U_FILE="${JELLYFIN_CONFIG}/tvgarden-us.m3u"
+SOURCE_URL="https://raw.githubusercontent.com/TVGarden/tv-garden-channel-list/main/channels/raw/countries/us.json"
+TEMP_FILE="/tmp/tvgarden-us.json"
+BACKUP_FILE="${M3U_FILE}.backup"
+
+echo "=== TVGarden Playlist Updater ==="
+echo "Started: $(date)"
+echo ""
+
+# Download the latest channel list
+echo "Downloading channel list from TVGarden..."
+if ! curl -sL "$SOURCE_URL" -o "$TEMP_FILE"; then
+    echo "ERROR: Failed to download channel list"
+    exit 1
+fi
+
+# Verify it's valid JSON
+if ! python3 -c "import json; json.load(open('$TEMP_FILE'))" 2>/dev/null; then
+    echo "ERROR: Downloaded file is not valid JSON"
+    rm -f "$TEMP_FILE"
+    exit 1
+fi
+
+# Backup existing playlist
+if [[ -f "$M3U_FILE" ]]; then
+    cp "$M3U_FILE" "$BACKUP_FILE"
+    OLD_COUNT=$(grep -c "^#EXTINF" "$M3U_FILE" 2>/dev/null || echo 0)
+    echo "Backed up existing playlist ($OLD_COUNT channels)"
+fi
+
+# Convert JSON to M3U format
+echo "Converting to M3U format..."
+python3 << 'EOF' > "$M3U_FILE"
+import json
+import sys
+
+with open('/tmp/tvgarden-us.json', 'r') as f:
+    data = json.load(f)
+
+print("#EXTM3U")
+print("# TVGarden US Channels - Updated: " + __import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+print("")
+
+count = 0
+for ch in data:
+    name = ch.get("name", "Unknown")
+    urls = ch.get("iptv_urls", [])
+    
+    # Skip channels without IPTV URLs
+    if not urls:
+        continue
+    
+    url = urls[0]
+    tvg_id = ch.get("nanoid", "")
+    lang = ch.get("language", "en")
+    geo_blocked = ch.get("isGeoBlocked", False)
+    
+    # Skip geo-blocked channels
+    if geo_blocked:
+        continue
+    
+    print(f'#EXTINF:-1 tvg-id="{tvg_id}" tvg-language="{lang}" tvg-country="US",{name}')
+    print(url)
+    count += 1
+
+print(f"\n# Total channels: {count}", file=sys.stderr)
+EOF
+
+# Cleanup temp file
+rm -f "$TEMP_FILE"
+
+# Check result
+if [[ ! -f "$M3U_FILE" ]] || [[ ! -s "$M3U_FILE" ]]; then
+    echo "ERROR: Failed to create M3U file"
+    if [[ -f "$BACKUP_FILE" ]]; then
+        echo "Restoring backup..."
+        mv "$BACKUP_FILE" "$M3U_FILE"
+    fi
+    exit 1
+fi
+
+NEW_COUNT=$(grep -c "^#EXTINF" "$M3U_FILE" 2>/dev/null || echo 0)
+echo ""
+echo "=== Update Complete ==="
+echo "Channels: $NEW_COUNT"
+echo "File: $M3U_FILE"
+
+# Set proper permissions
+chown nobody:users "$M3U_FILE"
+chmod 644 "$M3U_FILE"
+
+# Optional: Trigger Jellyfin to refresh Live TV guide
+# Uncomment if you have API key configured:
+# JELLYFIN_API_KEY="your-api-key-here"
+# curl -s -X POST "http://localhost:8096/ScheduledTasks/Running/RefreshGuide" \
+#      -H "X-Emby-Token: $JELLYFIN_API_KEY"
+
+echo "Finished: $(date)"

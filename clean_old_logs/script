@@ -1,0 +1,7 @@
+#!/bin/bash
+# Clean old rotated logs to prevent /var/log from filling up
+echo "=== Cleaning Old Logs ==="
+echo "Before: $(du -sh /var/log 2>/dev/null | cut -f1)"
+find /var/log -name '*.1' -o -name '*.2' -o -name '*.gz' -o -name '*.old' | xargs rm -f 2>/dev/null
+echo "After: $(du -sh /var/log 2>/dev/null | cut -f1)"
+echo "Done: $(date)"

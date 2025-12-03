@@ -1,0 +1,2 @@
+Auto-import photos from SD cards to Immich.
+Triggered by udev or run manually with device name.
