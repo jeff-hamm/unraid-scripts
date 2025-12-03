@@ -12,7 +12,10 @@ echo "Started: $(date)"
 APP_ROOT="/mnt/pool/appdata"
 STARTUP_SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 SCRIPTS_DIR="$(dirname "$STARTUP_SCRIPT_DIR")"
+source ${SCRIPTS_DIR}/.env
 
+git config --global user.email "$GITHUB_EMAIL"                                      
+git config --global user.name "$GITHUB_USER_NAME"    
 # === SYMLINKS FOR PERSISTENT STORAGE ===
 echo "Creating symlinks..."
 
@@ -29,7 +32,7 @@ SYMLINKS=(
     "$SCRIPTS_DIR/sd_import/sd-card-import.sh,/usr/local/bin/sd-card-import"
     "$SCRIPTS_DIR/sd_import/immich-go-upload.sh,/usr/local/bin/immich-go-upload"
     "$SCRIPTS_DIR/sd_import/install-sd-import.sh,/usr/local/bin/install-sd-import"
-    "$APP_ROOT/vscode-monitor/run.sh,/usr/local/bin/vscode-monitor"
+    "$SCRIPTS_DIR/copilot_system_monitor/run.sh,/usr/local/bin/copilot-system-monitor"
     "$STARTUP_SCRIPT_DIR/bashrc,/root/.bashrc"
     "$STARTUP_SCRIPT_DIR/shell_startup_env.sh,/etc/profile.d/shell_startup_env.sh"
     "$STARTUP_SCRIPT_DIR/auth,/root/.auth"
@@ -73,7 +76,6 @@ EOF
         echo "  SKIP: $source (not found)"
     fi
 done
-
 # === FIX /etc/profile ===
 # Unraid's default profile has 'cd $HOME' which breaks VS Code Remote SSH
 echo "Fixing /etc/profile..."

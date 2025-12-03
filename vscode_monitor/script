@@ -1,5 +1,6 @@
 #!/bin/bash
-# VS Code Monitor - User Script Wrapper
-# Calls the main run script in appdata
+# VS Code Monitor - User Script Wrapper (DEPRECATED)
+# This script now calls copilot-system-monitor
 
-/mnt/pool/appdata/vscode-monitor/run.sh "$@"
+echo "NOTE: vscode-monitor has been renamed to copilot-system-monitor"
+exec copilot-system-monitor "$@"
