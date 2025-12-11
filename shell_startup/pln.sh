@@ -194,6 +194,24 @@ while [[ $# -gt 0 ]]; do
             persist=true
             shift
             ;;
+        -s|-f|-n|-v|--symbolic|--force|--no-clobber|--verbose)
+            # Silently ignore common ln flags (we always create symlinks)
+            shift
+            ;;
+        -sf|-fs|-sv|-vs|-fv|-vf|-sfv|-svf|-fsv|-fvs|-vsf|-vfs)
+            # Silently ignore combined ln flags
+            shift
+            ;;
+        --)
+            # End of options
+            shift
+            break
+            ;;
+        -*)
+            # Unknown flag - ignore but warn
+            echo "Warning: ignoring unknown option: $1" >&2
+            shift
+            ;;
         *)
             if [[ -z "$source" ]]; then
                 source="$1"
@@ -203,6 +221,16 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
     esac
+done
+
+# Collect any remaining positional arguments after --
+while [[ $# -gt 0 ]]; do
+    if [[ -z "$source" ]]; then
+        source="$1"
+    elif [[ -z "$target" ]]; then
+        target="$1"
+    fi
+    shift
 done
 
 if [[ -z "$source" || -z "$target" ]]; then

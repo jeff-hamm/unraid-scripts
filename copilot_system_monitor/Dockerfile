@@ -40,7 +40,7 @@ RUN mkdir -p /app/logs /state/analysis
 
 # Copy monitoring scripts
 COPY system_monitor.py /app/
-COPY copilot_prompt.md /app/
+COPY copilot_prompt.md.template /app/copilot_prompt.md
 COPY system_info.py /app/
 COPY send_alert.sh /usr/local/bin/send_alert
 COPY alert_helper.py /app/

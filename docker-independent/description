@@ -1,0 +1,5 @@
+Set Docker to run independently from array state
+
+Since Docker runs entirely on the cache pool (/mnt/pool), it doesn't need to stop when the array stops.
+
+Run this script At Startup of Array to keep Docker running when you stop the array.

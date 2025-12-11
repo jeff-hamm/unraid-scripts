@@ -1,0 +1,10 @@
+#!/bin/bash
+# Keep Docker and VMs running when array stops
+# Both run on cache pool (/mnt/pool) and don't need to stop with the array
+#
+# This is the main entry point - just calls install.sh
+
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+
+# Run the install script
+"$SCRIPT_DIR/install.sh"

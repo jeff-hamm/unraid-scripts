@@ -1,0 +1,5 @@
+Keep VMs running independently from array state
+
+VMs stored on the cache pool don't need to stop when the array stops.
+
+Run this script At Startup of Array to keep VMs running when you stop the array.

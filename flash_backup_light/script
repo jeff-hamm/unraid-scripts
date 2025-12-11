@@ -1,0 +1,42 @@
+#!/bin/bash
+# Lightweight flash backup - excludes Unraid boot files that can be reinstalled
+# When called from Appdata Backup, $AB_DESTINATION contains the backup folder
+
+# Use AB_DESTINATION if set (from Appdata Backup), otherwise use argument or default
+BACKUP_DIR="${AB_DESTINATION:-${1:-/mnt/user/backups/appdata}}"
+DATE=$(date +%Y%m%d_%H%M%S)
+HOSTNAME=$(hostname)
+BACKUP_FILE="$BACKUP_DIR/${HOSTNAME}-flash-config-${DATE}.tar.gz"
+
+echo "Creating lightweight flash backup..."
+echo "Destination: $BACKUP_FILE"
+
+# Exclude list - large files that can be reinstalled
+cd /boot
+tar -czf "$BACKUP_FILE" \
+    --exclude="bzimage" \
+    --exclude="bzroot" \
+    --exclude="bzroot-gui" \
+    --exclude="bzmodules" \
+    --exclude="bzfirmware" \
+    --exclude="bzfirmware-gui" \
+    --exclude="ldlinux.c32" \
+    --exclude="ldlinux.sys" \
+    --exclude="memtest" \
+    --exclude="make_bootable*" \
+    --exclude="EFI" \
+    --exclude="syslinux" \
+    --exclude="System Volume Information" \
+    --exclude="logs" \
+    --exclude="prev" \
+    --exclude="previous" \
+    --exclude="config/plugins/*/packages" \
+    --exclude="config/plugins/*/*.txz" \
+    --exclude="config/plugins/*/*.tgz" \
+    --exclude="config/plugins/rclone/install" \
+    --exclude="config/plugins/dwpython/python*" \
+    --exclude="config/plugins/tailscale/tailscale*.tgz" \
+    . 2>/dev/null
+
+SIZE=$(ls -lh "$BACKUP_FILE" | awk '{print $5}')
+echo "✓ Flash config backup created: $SIZE"

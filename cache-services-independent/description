@@ -1,0 +1,5 @@
+Keep Docker and VMs running independently from array
+
+Since Docker and VMs run on the cache pool (/mnt/pool), they don't need to stop when the array stops.
+
+Run this script At Startup of Array to apply the patches.

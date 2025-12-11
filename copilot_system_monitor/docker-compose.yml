@@ -52,6 +52,10 @@ services:
       # Auth tokens directory
       - /root/.auth:/root/.auth:ro
       # Prompt file (mounted for easy editing without rebuild)
-      - ./copilot_prompt.md:/app/copilot_prompt.md:ro
+      - ${APP_PATH}/copilot_prompt.md:/app/copilot_prompt.md:ro
     working_dir: /app
     network_mode: bridge
+    labels:
+      - "chadburn.enabled=true"
+      - "chadburn.job-exec.vscode-monitor.schedule=0 6 * * *"
+      - "chadburn.job-exec.vscode-monitor.command=python3 /app/system_monitor.py"

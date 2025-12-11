@@ -9,13 +9,14 @@ echo "=== Shell Startup Configuration ==="
 echo "Started: $(date)"
 
 # Configuration
-APP_ROOT="/mnt/pool/appdata"
 STARTUP_SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+APP_ROOT="/mnt/pool/appdata"
+PERSISTENT_HOME="${APP_ROOT}/home"
 SCRIPTS_DIR="$(dirname "$STARTUP_SCRIPT_DIR")"
+set -a  # automatically export all variables
 source ${SCRIPTS_DIR}/.env
+set +a
 
-git config --global user.email "$GIT_AUTHOR_EMAIL"
-git config --global user.name "$GIT_AUTHOR_NAME"
 # === SYMLINKS FOR PERSISTENT STORAGE ===
 echo "Creating symlinks..."
 
@@ -39,13 +40,16 @@ else
     echo "  /etc/profile already fixed"
 fi
 
-# Increase /var/log tmpfs to 1GB (default 128MB fills up quickly)
-current_size=$(df /var/log | awk 'NR==2 {print $2}')
-if [[ "$current_size" -lt 1000000 ]]; then
-    mount -o remount,size=1G /var/log
-    echo "  Increased /var/log to 1GB"
-else
-    echo "  /var/log already sized appropriately"
+# === RUN BOOT.D SCRIPTS ===
+BOOT_D="/mnt/pool/appdata/home/boot.d"
+if [[ -d "$BOOT_D" ]]; then
+    echo "Running boot.d scripts..."
+    for script in "$BOOT_D"/*.sh; do
+        if [[ -x "$script" ]]; then
+            echo "  Running $(basename "$script")..."
+            source "$script"
+        fi
+    done
 fi
 
 echo ""

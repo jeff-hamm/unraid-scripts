@@ -1,0 +1,42 @@
+#!/bin/bash
+# Keep Docker running when array stops
+# Docker runs entirely on /mnt/pool (cache), so it doesn't need to stop with the array
+
+# Backup original rc.docker if not already backed up
+if [ ! -f /etc/rc.d/rc.docker.original ]; then
+    cp -p /etc/rc.d/rc.docker /etc/rc.d/rc.docker.original
+    logger "Backed up original rc.docker"
+fi
+
+# Check if already patched
+if grep -q "# PATCHED: Keep Docker running" /etc/rc.d/rc.docker; then
+    echo "Docker is already configured to stay running during array stop"
+    exit 0
+fi
+
+# Create a patched version
+cat > /tmp/rc.docker.patched << 'DOCKERPATCH'
+#!/bin/bash
+# PATCHED: Keep Docker running when array stops (Docker on cache pool)
+
+# Check if this is an array-stop operation
+PARENT_CMD=$(ps -o args= $PPID | head -1)
+if [[ "$1" == "stop" ]] && [[ "$PARENT_CMD" =~ (mdcmd|emhttp|array) ]]; then
+    logger "Array stopping but keeping Docker running (cache pool independent)"
+    echo "Docker staying active - runs on cache pool, not array"
+    exit 0
+fi
+
+# Otherwise, source and run the original script
+source /etc/rc.d/rc.docker.original
+DOCKERPATCH
+
+# Apply the patch
+cp /tmp/rc.docker.patched /etc/rc.d/rc.docker
+chmod +x /etc/rc.d/rc.docker
+
+logger "Docker configured to stay running when array stops"
+echo "✓ Docker will now stay running when you stop the array"
+echo "  Docker runs on: /mnt/pool (cache)"
+echo ""
+echo "To revert: cp /etc/rc.d/rc.docker.original /etc/rc.d/rc.docker"
