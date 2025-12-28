@@ -7,47 +7,51 @@
 
 echo "=== Shell Startup Configuration ==="
 echo "Started: $(date)"
-
 # Configuration
-STARTUP_SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
-APP_ROOT="/mnt/pool/appdata"
-PERSISTENT_HOME="${APP_ROOT}/home"
-SCRIPTS_DIR="$(dirname "$STARTUP_SCRIPT_DIR")"
-set -a  # automatically export all variables
-source ${SCRIPTS_DIR}/.env
-set +a
+STARTUP_SCRIPT="$(readlink -f "$0")"
+export PHOME=${1:-${PHOME:-${APP_ROOT:-/mnt/pool/appdata}/home}}
 
-# === SYMLINKS FOR PERSISTENT STORAGE ===
-echo "Creating symlinks..."
+# === ENSURE GO FILE IS CONFIGURED ===
+GO_FILE="/boot/config/go"
+REQUIRED_LINE="bash /boot/config/plugins/user.scripts/scripts/shell_startup/script /mnt/pool/appdata/home"
 
-# Bootstrap pln first (can't use pln to create itself)
-cat > /usr/local/bin/pln << 'EOF'
-#!/bin/bash
-exec bash "/boot/config/plugins/user.scripts/scripts/shell_startup/pln.sh" "$@"
+if [[ -f "$GO_FILE" ]]; then
+    # Check if the correct line exists
+    if ! grep -qF "$REQUIRED_LINE" "$GO_FILE"; then
+        echo "Adding shell_startup to $GO_FILE..."
+        
+        # Remove old 'source' line if it exists
+        if grep -qF "source /boot/config/plugins/user.scripts/scripts/shell_startup/script" "$GO_FILE"; then
+            sed -i '\|source /boot/config/plugins/user.scripts/scripts/shell_startup/script|d' "$GO_FILE"
+            echo "  Removed old 'source' line"
+        fi
+        
+        # Add the correct line
+        cat >> "$GO_FILE" << EOF
+
+# === SHELL STARTUP ===
+# Run the shell_startup script for symlinks, bashrc, profile.d, env vars
+# This also runs scripts from /mnt/pool/appdata/home/boot.d/ including:
+#   - startup.sh (git config, /var/log resize)
+#   - install-bluez.sh (Bluetooth stack for Home Assistant Docker)
+$REQUIRED_LINE
 EOF
-chmod +x /usr/local/bin/pln
-echo "  /usr/local/bin/pln -> pln.sh (wrapper)"
-
-# Use pln to apply all symlinks from config file
-pln --apply
-# === FIX /etc/profile ===
-# Unraid's default profile has 'cd $HOME' which breaks VS Code Remote SSH
-echo "Fixing /etc/profile..."
-if grep -q '^cd \$HOME$' /etc/profile 2>/dev/null; then
-    sed -i '/^cd \$HOME$/d' /etc/profile
-    echo "  Removed 'cd \$HOME' from /etc/profile"
+        echo "  Added shell_startup to go file"
+    else
+        echo "Shell startup already configured in go file"
+    fi
 else
-    echo "  /etc/profile already fixed"
+    echo "Warning: $GO_FILE not found"
 fi
 
 # === RUN BOOT.D SCRIPTS ===
-BOOT_D="/mnt/pool/appdata/home/boot.d"
+BOOT_D="${PHOME}/boot.d"
 if [[ -d "$BOOT_D" ]]; then
     echo "Running boot.d scripts..."
     for script in "$BOOT_D"/*.sh; do
         if [[ -x "$script" ]]; then
             echo "  Running $(basename "$script")..."
-            source "$script"
+            source "$script" "$STARTUP_SCRIPT"
         fi
     done
 fi

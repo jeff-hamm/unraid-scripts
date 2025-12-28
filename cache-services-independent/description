@@ -1,5 +1,10 @@
-Keep Docker and VMs running independently from array
+Keep Docker and VMs running when array stops
 
-Since Docker and VMs run on the cache pool (/mnt/pool), they don't need to stop when the array stops.
+Intelligently manages services on cache pool:
+✓ Docker daemon stays running
+✓ VMs stay running  
+✓ Containers with cache-only paths keep running
+⏹ Containers with array mounts are stopped
 
-Run this script At Startup of Array to apply the patches.
+Run At Startup of Array or run install.sh manually.
+See README.md for details.

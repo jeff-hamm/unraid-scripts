@@ -1,0 +1,88 @@
+#!/bin/bash
+# Background Array Restart Script
+# This script runs detached from the terminal so it survives connection loss
+# Usage: Run this script, then your connection can die safely
+
+LOG="/tmp/array-restart.log"
+
+echo "=== Array Restart Script ===" | tee "$LOG"
+echo "Started: $(date)" | tee -a "$LOG"
+echo "This script will run in the background." | tee -a "$LOG"
+echo "Monitor progress: tail -f $LOG" | tee -a "$LOG"
+echo "" | tee -a "$LOG"
+
+# Wait a moment for user to see the message
+sleep 3
+
+echo "[1/6] Stopping Docker..." | tee -a "$LOG"
+/etc/rc.d/rc.docker stop >> "$LOG" 2>&1
+
+echo "[2/6] Waiting for VM to shutdown..." | tee -a "$LOG"
+for i in {1..30}; do
+    if ! virsh list --name 2>/dev/null | grep -q .; then
+        echo "  All VMs stopped." | tee -a "$LOG"
+        break
+    fi
+    echo "  Waiting... ($i/30)" >> "$LOG"
+    sleep 2
+done
+
+# Force destroy any remaining VMs
+if virsh list --name 2>/dev/null | grep -q .; then
+    echo "  Force destroying remaining VMs..." | tee -a "$LOG"
+    virsh list --name | while read vm; do
+        [ -n "$vm" ] && virsh destroy "$vm" >> "$LOG" 2>&1
+    done
+fi
+
+echo "[3/6] Unmounting manual mounts..." | tee -a "$LOG"
+umount /mnt/pool/domains/docker/btrfs 2>/dev/null
+umount /etc/libvirt 2>/dev/null
+umount /mnt/pool 2>/dev/null
+fusermount -uz /mnt/user 2>/dev/null
+
+echo "[4/6] Stopping array..." | tee -a "$LOG"
+/usr/local/sbin/emcmd cmdStop=Stop
+
+# Wait for array to stop
+echo "  Waiting for array to stop..." | tee -a "$LOG"
+for i in {1..60}; do
+    state=$(grep 'mdState=' /var/local/emhttp/var.ini 2>/dev/null | cut -d'"' -f2)
+    echo "  [$i/60] State: $state" >> "$LOG"
+    if [ "$state" = "STOPPED" ]; then
+        echo "  Array stopped." | tee -a "$LOG"
+        break
+    fi
+    sleep 2
+done
+
+echo "[5/6] Starting array..." | tee -a "$LOG"
+sleep 2
+/usr/local/sbin/emcmd cmdStart=Start
+
+# Wait for array to start
+echo "  Waiting for array to start..." | tee -a "$LOG"
+for i in {1..60}; do
+    state=$(grep 'mdState=' /var/local/emhttp/var.ini 2>/dev/null | cut -d'"' -f2)
+    echo "  [$i/60] State: $state" >> "$LOG"
+    if [ "$state" = "STARTED" ]; then
+        echo "  Array started." | tee -a "$LOG"
+        break
+    fi
+    sleep 2
+done
+
+echo "[6/6] Starting Docker..." | tee -a "$LOG"
+sleep 5
+/etc/rc.d/rc.docker start >> "$LOG" 2>&1
+
+echo "" | tee -a "$LOG"
+echo "=== Array Restart Complete ===" | tee -a "$LOG"
+echo "Finished: $(date)" | tee -a "$LOG"
+
+# Verify pool mount
+if mount | grep -q "/mnt/pool"; then
+    echo "Pool mounted successfully!" | tee -a "$LOG"
+else
+    echo "WARNING: Pool may not be mounted. Check UI." | tee -a "$LOG"
+fi
