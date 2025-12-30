@@ -42,3 +42,11 @@ node_modules/
 # --- OS/editor noise ---
 .DS_Store
 Thumbs.db
+
+# --- Local tools (keep scripts, ignore installed payloads) ---
+.local/lib/
+.local/share/
+# Large binaries / installed tools (reinstallable)
+.local/bin/gh
+.local/bin/lazydocker
+.local/bin/git-filter-repo
