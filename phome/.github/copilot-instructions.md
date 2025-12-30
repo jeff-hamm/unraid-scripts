@@ -6,6 +6,12 @@
 - Persistent home: `$PHOME` (`/mnt/pool/appdata/home`) → auto-symlinked to `/root` on boot
 - Documentation: `~/docs` (symlinked to `$PHOME/docs`)
 
+### Storage Notes
+- `/boot` (Unraid flash) is FAT32: symlinks + unix perms/ownership are limited
+	- Avoid tools that try to preserve owner/group/perms/times when writing to `/boot` (e.g. `rsync -a`)
+	- For git repos under `/boot`, prefer `git config core.filemode false` and `git config core.symlinks false`
+- `$PHOME` on `/mnt/pool` is the “real” editable workspace; `/root/*` is a convenience view via boot-time symlinks
+
 ### Path Rules
 - Use relative paths when possible
 - Store persistent files in `$PHOME` - they auto-appear in `/root`

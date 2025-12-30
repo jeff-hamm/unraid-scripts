@@ -2,6 +2,10 @@
 # Goal: track scripts/config/docs; ignore secrets + runtime/cache state.
 
 # --- Secrets / auth (never commit) ---
+phome/
+appdata/
+dead.letter
+*.replaced
 .auth/
 .copilot-token
 .env
@@ -19,10 +23,12 @@
 **/analysis/
 # --- VS Code remote server state (large, re-downloadable) ---
 .vscode-server/
-
+.bash_history
+.wget-hsts
 # --- Local caches / temp ---
 .cache/
 .tmp/
+.dotnet/
 tmp/
 *.tmp
 *.temp
