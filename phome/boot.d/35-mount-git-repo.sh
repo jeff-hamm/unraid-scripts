@@ -2,7 +2,8 @@
 # Mount bind points for unraid-scripts git repo
 # This allows git to track files at their real locations
 
-REPO_DIR="/mnt/pool/appdata/unraid-scripts"
+REPO_DIR="${REPO_DIR:-/mnt/pool/appdata/unraid-scripts}"
+APPDATA_ROOT="$(dirname "$REPO_DIR")"
 
 # Wait for pool to be available
 timeout=30
@@ -26,8 +27,8 @@ mkdir -p "$REPO_DIR/ai-system-monitor"
 
 # Bind mount each location
 if ! mountpoint -q "$REPO_DIR/phome"; then
-  mount --bind /mnt/pool/appdata/home "$REPO_DIR/phome" && \
-    echo "Mounted: $REPO_DIR/phome -> /mnt/pool/appdata/home"
+  mount --bind "$APPDATA_ROOT/home" "$REPO_DIR/phome" && \
+    echo "Mounted: $REPO_DIR/phome -> $APPDATA_ROOT/home"
 fi
 
 if ! mountpoint -q "$REPO_DIR/user.scripts"; then
@@ -36,6 +37,6 @@ if ! mountpoint -q "$REPO_DIR/user.scripts"; then
 fi
 
 if ! mountpoint -q "$REPO_DIR/ai-system-monitor"; then
-  mount --bind /mnt/pool/appdata/ai-system-monitor "$REPO_DIR/ai-system-monitor" && \
-    echo "Mounted: $REPO_DIR/ai-system-monitor -> /mnt/pool/appdata/ai-system-monitor"
+  mount --bind "$APPDATA_ROOT/ai-system-monitor" "$REPO_DIR/ai-system-monitor" && \
+    echo "Mounted: $REPO_DIR/ai-system-monitor -> $APPDATA_ROOT/ai-system-monitor"
 fi
