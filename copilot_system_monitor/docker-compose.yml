@@ -39,8 +39,8 @@ services:
       - /var/local/emhttp:/host/emhttp:ro
       # Host SSH keys for VM access
       - /root/.ssh:/root/.ssh:ro
-      # State directory
-      - ${STATE_DIR:-/mnt/pool/appdata/copilot-system-monitor/state}:/state:rw
+      # State directory (documentation/notes)
+      - ${STATE_DIR:-/mnt/pool/appdata/home/docs/projects/copilot-system-monitor}:/state:rw
       # Docker-compose files for managed stacks
       - ${APP_ROOT:-/mnt/pool/appdata}/takeout-script:/app/takeout-script:ro
       - ${APP_ROOT:-/mnt/pool/appdata}/onedrive/docker:/app/onedrive:ro

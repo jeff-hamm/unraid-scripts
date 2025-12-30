@@ -10,7 +10,7 @@ echo "Started: $(date)"
 # Configuration
 STARTUP_SCRIPT="$(readlink -f "$0")"
 export PHOME=${1:-${PHOME:-${APP_ROOT:-/mnt/pool/appdata}/home}}
-
+echo "Using PHOME=$PHOME"
 # === ENSURE GO FILE IS CONFIGURED ===
 GO_FILE="/boot/config/go"
 REQUIRED_LINE="bash /boot/config/plugins/user.scripts/scripts/shell_startup/script /mnt/pool/appdata/home"
