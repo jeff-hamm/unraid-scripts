@@ -1,0 +1,43 @@
+// LAYOUT A: "Focused Coder" - Landscape Primary
+// Apply these settings for a clean, distraction-free coding experience
+// Your portrait monitor should have a 2nd VS Code window with explorer/terminal
+{
+    // ===== SIDEBAR =====
+    // Hide sidebar on primary - use 2nd monitor for navigation
+    "workbench.sideBar.location": "left",
+    "workbench.activityBar.location": "hidden",
+    
+    // ===== PANEL (Terminal/Problems/Output) =====
+    // Hide panel on primary - terminal goes to 2nd monitor
+    "workbench.panel.defaultLocation": "bottom",
+    
+    // ===== EDITOR =====
+    // Centered layout for focused coding
+    "workbench.editor.centeredLayoutAutoResize": true,
+    "workbench.editor.centeredLayoutFixedWidth": false,
+    
+    // Maximize editor real estate
+    "editor.minimap.enabled": false,
+    "breadcrumbs.enabled": false,
+    "editor.scrollbar.vertical": "hidden",
+    "editor.scrollbar.horizontal": "hidden",
+    "editor.overviewRulerBorder": false,
+    
+    // Clean editor tabs
+    "workbench.editor.showTabs": "single",
+    "workbench.editor.enablePreview": false,
+    
+    // ===== ZEN MODE SETTINGS =====
+    "zenMode.hideLineNumbers": false,
+    "zenMode.centerLayout": true,
+    "zenMode.fullScreen": false,
+    "zenMode.hideActivityBar": true,
+    "zenMode.hideStatusBar": false,
+    "zenMode.hideTabs": true,
+    "zenMode.silentNotifications": true,
+    
+    // ===== WINDOW =====
+    "window.menuBarVisibility": "compact",
+    "window.commandCenter": false,
+    "window.titleBarStyle": "custom"
+}

@@ -1,0 +1,25 @@
+// LAYOUT C: "Debug Mode"
+// Optimized for debugging sessions
+// Portrait monitor shows call stack, variables, watch (all benefit from vertical space)
+{
+    // ===== DEBUG SIDEBAR =====
+    "debug.toolBarLocation": "docked",
+    "debug.inlineValues": "on",
+    "debug.showBreakpointsInOverviewRuler": true,
+    
+    // ===== PANEL =====
+    // Debug console in panel
+    "workbench.panel.defaultLocation": "bottom",
+    
+    // ===== EDITOR =====
+    "editor.minimap.enabled": false, // More room for code during debug
+    "editor.glyphMargin": true, // Show breakpoint icons
+    
+    // ===== DEBUG CONSOLE =====
+    "debug.console.fontSize": 12,
+    "debug.console.wordWrap": true,
+    
+    // ===== VARIABLES VIEW =====
+    // These views work great stacked on portrait monitor
+    "debug.autoExpandLazyVariables": true
+}

@@ -1,0 +1,165 @@
+#!/bin/bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: sync-to-git <src_dir> <repo_dir> <subdir> [options]
+
+Copies files from <src_dir> into <repo_dir>/<subdir>/ using the source repo's
+.gitignore rules (via `git ls-files --exclude-standard`). Then (by default)
+commits and pushes.
+
+Options:
+  --list                Print the file list that would be synced (respects .gitignore)
+  --dry-run             Show what would change (no writes)
+  --no-commit           Do not create a git commit
+  --no-push             Do not push to origin
+  -m, --message <msg>   Commit message (default: "sync: <subdir> <timestamp>")
+  -h, --help            Show this help
+
+Notes:
+  - <src_dir> must be a git repo; ignore rules come from its .gitignore
+  - This intentionally does NOT copy ignored files (e.g., secrets, caches)
+EOF
+}
+
+if [[ ${1:-} == "-h" || ${1:-} == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ $# -lt 3 ]]; then
+  usage
+  exit 2
+fi
+
+SRC_DIR="$1"; shift
+REPO_DIR="$1"; shift
+SUBDIR="$1"; shift
+
+LIST_ONLY=false
+DRY_RUN=false
+DO_COMMIT=true
+DO_PUSH=true
+COMMIT_MSG=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --list)
+      LIST_ONLY=true; shift;;
+    --dry-run)
+      DRY_RUN=true; shift;;
+    --no-commit)
+      DO_COMMIT=false; shift;;
+    --no-push)
+      DO_PUSH=false; shift;;
+    -m|--message)
+      COMMIT_MSG="$2"; shift 2;;
+    -h|--help)
+      usage; exit 0;;
+    *)
+      echo "ERROR: Unknown option: $1" >&2
+      usage; exit 2;;
+  esac
+done
+
+if [[ ! -d "$SRC_DIR" ]]; then
+  echo "ERROR: src_dir not found: $SRC_DIR" >&2
+  exit 1
+fi
+
+if [[ ! -d "$REPO_DIR/.git" ]]; then
+  echo "ERROR: repo_dir not found or not a git repo: $REPO_DIR" >&2
+  exit 1
+fi
+
+if [[ ! -d "$REPO_DIR/$SUBDIR" ]]; then
+  echo "ERROR: subdir missing: $REPO_DIR/$SUBDIR" >&2
+  exit 1
+fi
+
+if ! git -C "$SRC_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "ERROR: src_dir is not a git repo (needed to honor .gitignore): $SRC_DIR" >&2
+  exit 1
+fi
+
+# Build file list from git, respecting ignore rules.
+# Includes tracked + untracked (but not ignored) files.
+TMP_LIST="$(mktemp)"
+trap 'rm -f "$TMP_LIST"' EXIT
+
+git -C "$SRC_DIR" ls-files -z --cached --others --exclude-standard > "$TMP_LIST"
+
+if $LIST_ONLY; then
+  tr '\0' '\n' < "$TMP_LIST"
+  exit 0
+fi
+
+# FAT32 friendliness for the destination repo
+cd "$REPO_DIR"
+git config core.filemode false >/dev/null
+git config core.symlinks false >/dev/null
+
+DEST_DIR="$REPO_DIR/$SUBDIR"
+
+if $DRY_RUN; then
+  echo "[dry-run] Would sync from: $SRC_DIR"
+  echo "[dry-run] Into:        $DEST_DIR"
+
+  # Show rough deletion count (files present in dest but not in src list)
+  SRC_DIR="$SRC_DIR" DEST_DIR="$DEST_DIR" TMP_LIST="$TMP_LIST" python3 - <<'PY'
+import os, sys
+src_dir = os.environ.get('SRC_DIR')
+dest_dir = os.environ.get('DEST_DIR')
+list_path = os.environ.get('TMP_LIST')
+
+def read_null_list(p):
+    with open(p, 'rb') as f:
+        data = f.read().split(b'\0')
+    return {x.decode('utf-8', 'surrogateescape') for x in data if x}
+
+src_files = read_null_list(list_path)
+dest_files = set()
+for root, _, files in os.walk(dest_dir):
+    for name in files:
+        full = os.path.join(root, name)
+        rel = os.path.relpath(full, dest_dir)
+        dest_files.add(rel)
+
+deletes = len(dest_files - src_files)
+print(f"[dry-run] Files to copy/update: {len(src_files)}")
+print(f"[dry-run] Files to delete:      {deletes}")
+PY
+  exit 0
+fi
+
+echo "Syncing (gitignore-aware): $SRC_DIR -> $DEST_DIR"
+
+# Make destination mirror the selected set by clearing first.
+# This ensures deletions are reflected even when we only copy a file list.
+find "$DEST_DIR" -mindepth 1 -delete
+
+# Copy only the git-selected files.
+# Destination lives on Unraid flash (/boot) which is FAT32; avoid owner/group/perms/times.
+rsync -r --from0 --files-from="$TMP_LIST" \
+  --no-owner --no-group --no-perms --omit-dir-times \
+  "$SRC_DIR/" "$DEST_DIR/"
+
+git status --porcelain=v1 -- "$SUBDIR" || true
+
+if [[ -z "$(git status --porcelain=v1 -- "$SUBDIR")" ]]; then
+  echo "No changes to commit."
+  exit 0
+fi
+
+if $DO_COMMIT; then
+  git add -A -- "$SUBDIR"
+  if [[ -z "$COMMIT_MSG" ]]; then
+    COMMIT_MSG="sync: $SUBDIR $(date +%Y-%m-%d_%H%M%S)"
+  fi
+  git commit -m "$COMMIT_MSG"
+fi
+
+if $DO_PUSH; then
+  git push origin HEAD
+fi

@@ -42,15 +42,3 @@ node_modules/
 # --- OS/editor noise ---
 .DS_Store
 Thumbs.db
-
-# --- Local-only directories you don’t want in git ---
-# Keep the scripts in .local/bin, but ignore everything else in .local.
-.local/
-!.local/bin/
-!.local/bin/**
-
-# User-specific VS Code layouts
-vscode-layouts/
-
-# Symlink to external Unraid User Scripts location
-phome-repo

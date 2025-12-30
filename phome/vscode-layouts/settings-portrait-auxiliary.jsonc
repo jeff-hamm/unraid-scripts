@@ -1,0 +1,37 @@
+// LAYOUT: Portrait Monitor - Auxiliary Window
+// Open this as your 2nd VS Code window on the portrait monitor
+// Use: Ctrl+Shift+P → "Workspaces: Duplicate As Workspace in New Window"
+// Then apply these settings to that window's workspace settings
+{
+    // ===== SIDEBAR - ALWAYS VISIBLE =====
+    "workbench.sideBar.location": "left",
+    "workbench.activityBar.location": "default",
+    
+    // ===== PANEL - STACKED LAYOUT FOR PORTRAIT =====
+    // Bottom panel works great on portrait - you have vertical space to spare
+    "workbench.panel.defaultLocation": "bottom",
+    "workbench.panel.opensMaximized": "never",
+    
+    // ===== EDITOR - MINIMAL =====
+    // This window is for navigation/terminal, not heavy editing
+    "editor.minimap.enabled": false,
+    "workbench.editor.showTabs": "multiple",
+    "workbench.editor.openSideBySideDirection": "down", // Stack files vertically on portrait
+    
+    // ===== EXPLORER SETTINGS =====
+    "explorer.compactFolders": false, // Easier to see structure
+    "explorer.sortOrder": "type",
+    
+    // ===== OUTLINE - GREAT FOR PORTRAIT =====
+    "outline.showVariables": true,
+    "outline.showFunctions": true,
+    "outline.showClasses": true,
+    
+    // ===== TERMINAL =====
+    "terminal.integrated.defaultLocation": "panel",
+    "terminal.integrated.tabs.enabled": true,
+    
+    // ===== FONT - SLIGHTLY SMALLER FOR MORE CONTENT =====
+    "editor.fontSize": 12,
+    "terminal.integrated.fontSize": 11
+}

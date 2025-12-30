@@ -1,0 +1,54 @@
+#!/bin/bash
+set -euo pipefail
+
+PHOME_DEFAULT="/mnt/pool/appdata/home"
+REPO_DEFAULT="/boot/config/plugins/user.scripts/scripts"
+SUBDIR_DEFAULT="phome"
+
+PHOME="${PHOME:-$PHOME_DEFAULT}"
+REPO_DIR="${UNRAID_SCRIPTS_REPO:-$REPO_DEFAULT}"
+SUBDIR="$SUBDIR_DEFAULT"
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+SYNC_TO_GIT="$SCRIPT_DIR/sync-to-git"
+
+usage() {
+  cat <<EOF
+Usage: phome-sync-to-git [options]
+
+Wrapper around sync-to-git for syncing the live \$PHOME into unraid-scripts under '$SUBDIR/'.
+Ignore rules come from \$PHOME/.gitignore.
+
+Options (passed through to sync-to-git):
+  --dry-run
+  --no-commit
+  --no-push
+  -m, --message <msg>
+
+Overrides:
+  --phome <path>        Source PHOME path (default: $PHOME_DEFAULT)
+  --repo <path>         unraid-scripts repo path (default: $REPO_DEFAULT)
+EOF
+}
+
+ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --phome)
+      PHOME="$2"; shift 2;;
+    --repo)
+      REPO_DIR="$2"; shift 2;;
+    -h|--help)
+      usage; exit 0;;
+    *)
+      ARGS+=("$1")
+      shift;;
+  esac
+done
+
+if [[ ! -x "$SYNC_TO_GIT" ]]; then
+  echo "ERROR: sync-to-git not found/executable at: $SYNC_TO_GIT" >&2
+  exit 1
+fi
+
+exec "$SYNC_TO_GIT" "$PHOME" "$REPO_DIR" "$SUBDIR" "${ARGS[@]}"

@@ -23,6 +23,13 @@
 	- takeout-script (usually under `/mnt/pool/appdata/takeout-script` or `~/appdata/takeout-script`)
 	- Unraid User Scripts (usually under `/boot/config/plugins/user.scripts/scripts/` or ~/scripts)
 
+### Keeping GitHub Up To Date
+- `$PHOME` is the live editable copy; `unraid-scripts` contains a git-tracked copy under `phome/`
+- Use `$PHOME/.local/bin/phome-sync-to-git` to sync `$PHOME` → `/boot/config/plugins/user.scripts/scripts/phome/`, then commit + push
+	- Sync respects `$PHOME/.gitignore` (uses git to decide what to copy)
+  - Dry run: `phome-sync-to-git --dry-run`
+  - Custom message: `phome-sync-to-git -m "phome: update <thing>"`
+
 ## Documentation
 ```
 ~/docs/

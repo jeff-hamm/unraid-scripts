@@ -1,0 +1,210 @@
+#!/bin/bash
+#
+# add-cloudflare-host - Add a hostname to Cloudflare tunnel and HA ingress panel
+#
+# Usage: add-cloudflare-host <hostname> <service-url> [title] [icon]
+# Example: add-cloudflare-host tdarr.infinitebutts.com http://192.168.1.216:8265
+# Example: add-cloudflare-host tdarr.infinitebutts.com http://192.168.1.216:8265 "Tdarr Transcoder" "mdi:video-box"
+#
+
+set -e
+
+# Configuration paths
+CLOUDFLARED_CONFIG="/root/appdata/networking/cloudflared/config.yml"
+HA_INGRESS_CONFIG="/root/appdata/hammassistant/config/yaml/global/ingress.yaml"
+COMPOSE_DIR="/root/appdata/networking"
+
+# Check if required parameters are provided
+if [ $# -lt 2 ]; then
+    echo "Usage: $0 <hostname> <service-url> [title] [icon]"
+    echo ""
+    echo "Examples:"
+    echo "  $0 tdarr.infinitebutts.com http://192.168.1.216:8265"
+    echo "  $0 tdarr.infinitebutts.com http://192.168.1.216:8265 'Tdarr Transcoder' 'mdi:video-box'"
+    echo ""
+    echo "This script will:"
+    echo "  1. Add hostname to Cloudflare tunnel config"
+    echo "  2. Add entry to Home Assistant ingress panel"
+    echo "  3. Register DNS route with Cloudflare"
+    echo "  4. Restart cloudflared container"
+    exit 1
+fi
+
+NEW_HOST="$1"
+SERVICE="$2"
+TITLE="${3:-}"
+ICON="${4:-mdi:web}"
+
+# Validate service URL format
+if [[ ! "$SERVICE" =~ ^https?://[^[:space:]]+$ ]]; then
+    echo "Error: Invalid service URL format. Must start with http:// or https://"
+    exit 1
+fi
+
+# Generate default title from hostname if not provided
+if [ -z "$TITLE" ]; then
+    # Extract subdomain (e.g., "tdarr" from "tdarr.infinitebutts.com")
+    SUBDOMAIN=$(echo "$NEW_HOST" | cut -d. -f1)
+    # Capitalize first letter
+    TITLE="$(echo "${SUBDOMAIN:0:1}" | tr '[:lower:]' '[:upper:]')${SUBDOMAIN:1}"
+fi
+
+# Generate service key from subdomain (lowercase, alphanumeric only)
+SERVICE_KEY=$(echo "$NEW_HOST" | cut -d. -f1 | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_]/_/g')
+
+echo "=================================================="
+echo "Adding Cloudflare tunnel host:"
+echo "  Hostname: $NEW_HOST"
+echo "  Service:  $SERVICE"
+echo "  Title:    $TITLE"
+echo "  Icon:     $ICON"
+echo "  Key:      $SERVICE_KEY"
+echo "=================================================="
+echo ""
+
+# ============================================
+# 1. Update Cloudflare tunnel config
+# ============================================
+echo "Step 1: Updating Cloudflare tunnel config..."
+
+if [ ! -f "$CLOUDFLARED_CONFIG" ]; then
+    echo "Error: $CLOUDFLARED_CONFIG not found"
+    exit 1
+fi
+
+# Check if hostname already exists in cloudflared config
+if grep -q "^- hostname: ${NEW_HOST}$" "$CLOUDFLARED_CONFIG"; then
+    echo "  Hostname already exists in cloudflared config, updating service..."
+    # Find the line number and update the service
+    LINE_NUM=$(grep -n "^- hostname: ${NEW_HOST}$" "$CLOUDFLARED_CONFIG" | head -1 | cut -d: -f1)
+    SERVICE_LINE=$((LINE_NUM + 1))
+    
+    # Check if next line is a path (subpath entry)
+    NEXT_LINE=$(sed -n "${SERVICE_LINE}p" "$CLOUDFLARED_CONFIG")
+    if [[ "$NEXT_LINE" =~ ^[[:space:]]*path: ]]; then
+        # Has subpath, service is one more line down
+        SERVICE_LINE=$((SERVICE_LINE + 1))
+    fi
+    
+    # Create backup
+    cp "$CLOUDFLARED_CONFIG" "${CLOUDFLARED_CONFIG}.backup"
+    
+    # Update service line
+    sed -i "${SERVICE_LINE}s|^[[:space:]]*service:.*|  service: $SERVICE|" "$CLOUDFLARED_CONFIG"
+    echo "  ✓ Updated cloudflared config"
+else
+    echo "  Adding new entry to cloudflared config..."
+    # Create backup
+    cp "$CLOUDFLARED_CONFIG" "${CLOUDFLARED_CONFIG}.backup"
+    
+    # Remove ALL - service: http_status:404 lines (there should only be one, but clean up any extras)
+    sed -i '/^- service: http_status:404$/d' "$CLOUDFLARED_CONFIG"
+    
+    # Append the new hostname and service entry, then add the 404 catch-all at the end
+    cat >> "$CLOUDFLARED_CONFIG" << EOF
+- hostname: $NEW_HOST
+  service: $SERVICE
+- service: http_status:404
+EOF
+    echo "  ✓ Added to cloudflared config"
+fi
+
+# ============================================
+# 2. Update Home Assistant ingress panel
+# ============================================
+echo ""
+echo "Step 2: Updating Home Assistant ingress panel..."
+
+if [ ! -f "$HA_INGRESS_CONFIG" ]; then
+    echo "Error: $HA_INGRESS_CONFIG not found"
+    exit 1
+fi
+
+# Check if service key already exists in HA ingress config
+if grep -q "^${SERVICE_KEY}:" "$HA_INGRESS_CONFIG"; then
+    echo "  Entry already exists in HA ingress, updating..."
+    # Create backup
+    cp "$HA_INGRESS_CONFIG" "${HA_INGRESS_CONFIG}.backup"
+    
+    # Find the service key line and update the URL
+    LINE_NUM=$(grep -n "^${SERVICE_KEY}:" "$HA_INGRESS_CONFIG" | head -1 | cut -d: -f1)
+    
+    # Update title, url, and icon (preserving other fields)
+    sed -i "${LINE_NUM},/^[a-z_]/s|^  title:.*|  title: $TITLE|" "$HA_INGRESS_CONFIG"
+    sed -i "${LINE_NUM},/^[a-z_]/s|^  url:.*|  url: $SERVICE|" "$HA_INGRESS_CONFIG"
+    sed -i "${LINE_NUM},/^[a-z_]/s|^  icon:.*|  icon: $ICON|" "$HA_INGRESS_CONFIG"
+    
+    echo "  ✓ Updated HA ingress config"
+else
+    echo "  Adding new entry to HA ingress..."
+    # Create backup
+    cp "$HA_INGRESS_CONFIG" "${HA_INGRESS_CONFIG}.backup"
+    
+    # Append the new service entry to the end of the file
+    cat >> "$HA_INGRESS_CONFIG" << EOF
+
+${SERVICE_KEY}:
+  title: $TITLE
+  url: $SERVICE
+  icon: $ICON
+  work_mode: iframe
+EOF
+    echo "  ✓ Added to HA ingress config"
+fi
+
+# ============================================
+# 3. Add DNS route via Cloudflare
+# ============================================
+echo ""
+echo "Step 3: Adding DNS route to Cloudflare..."
+
+# Extract tunnel ID from config file
+TUNNEL_ID=$(grep "^tunnel:" "$CLOUDFLARED_CONFIG" | awk '{print $2}' | tr -d '\r')
+if [ -z "$TUNNEL_ID" ]; then
+    echo "Error: Could not find tunnel ID in $CLOUDFLARED_CONFIG"
+    exit 1
+fi
+
+echo "  Tunnel ID: $TUNNEL_ID"
+echo "  Hostname:  $NEW_HOST"
+
+# Run cloudflared route dns command using docker
+if docker run --rm \
+    -v "$COMPOSE_DIR/auth/cloudflared/.credentials.json:/.credentials.json:ro" \
+    -v "$COMPOSE_DIR/auth/cloudflared/cert.pem:/.cloudflared/cert.pem:ro" \
+    --env-file "$COMPOSE_DIR/.env" \
+    cloudflare/cloudflared:latest \
+    tunnel route dns "$TUNNEL_ID" "$NEW_HOST" 2>&1 | grep -q "Successfully"; then
+    echo "  ✓ DNS route added"
+else
+    echo "  ⚠ DNS route may already exist or failed (check manually if needed)"
+fi
+
+# ============================================
+# 4. Restart cloudflared container
+# ============================================
+echo ""
+echo "Step 4: Restarting cloudflared container..."
+
+if docker ps | grep -q cloudflared-tunnel; then
+    docker restart cloudflared-tunnel >/dev/null 2>&1
+    echo "  ✓ Cloudflared container restarted"
+else
+    echo "  ⚠ Cloudflared container not running, attempting to start..."
+    cd "$COMPOSE_DIR" && docker compose up -d cloudflared-tunnel >/dev/null 2>&1
+    echo "  ✓ Cloudflared container started"
+fi
+
+echo ""
+echo "=================================================="
+echo "✓ Successfully configured $NEW_HOST"
+echo "=================================================="
+echo ""
+echo "The service should now be accessible at:"
+echo "  https://$NEW_HOST"
+echo ""
+echo "And visible in Home Assistant ingress panel as:"
+echo "  $TITLE"
+echo ""
+echo "Note: DNS propagation may take a few minutes."
+echo ""
