@@ -8,7 +8,6 @@
 
 ### Path Rules
 - Use relative paths when possible
-- Never use `/dev/null` or `/tmp` directly (use `./null`, `./tmp` symlinks)
 - Store persistent files in `$PHOME` - they auto-appear in `/root`
 - Use `lnp <source> <target>` for non-PHOME symlinks (auto-persists if target outside `/mnt`)
 
