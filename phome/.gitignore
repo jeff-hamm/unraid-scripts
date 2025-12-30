@@ -1,0 +1,56 @@
+# $PHOME gitignore
+# Goal: track scripts/config/docs; ignore secrets + runtime/cache state.
+
+# --- Secrets / auth (never commit) ---
+.auth/
+.copilot-token
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+*.key
+*.pem
+*.pfx
+*.p12
+*.crt
+*.cer
+*.der
+**/analysis/
+# --- VS Code remote server state (large, re-downloadable) ---
+.vscode-server/
+
+# --- Local caches / temp ---
+.cache/
+.tmp/
+tmp/
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# --- Logs (regenerated) ---
+*.log
+logs/
+
+# --- Language/tool caches ---
+__pycache__/
+*.pyc
+node_modules/
+
+# --- OS/editor noise ---
+.DS_Store
+Thumbs.db
+
+# --- Local-only directories you don’t want in git ---
+# Keep the scripts in .local/bin, but ignore everything else in .local.
+.local/
+!.local/bin/
+!.local/bin/**
+
+# User-specific VS Code layouts
+vscode-layouts/
+
+# Symlink to external Unraid User Scripts location
+phome-repo

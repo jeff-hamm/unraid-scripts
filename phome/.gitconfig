@@ -1,0 +1,7 @@
+[user]
+	email = jeff.hamm@gmail.com
+	name = Jeff Hamm
+[init]
+	defaultBranch = main
+[safe]
+	directory = /mnt/pool/appdata/home
