@@ -26,6 +26,12 @@ CONTAINER = "automated-takeout"
 # GitHub token file (mounted from host auth directory)
 COPILOT_TOKEN_FILE = os.getenv("COPILOT_TOKEN_FILE", "/root/.auth/.copilot-token")
 
+# Home Assistant token file (mounted from host auth directory)
+HA_TOKEN_FILE = os.getenv("HA_TOKEN_FILE", "/root/.auth/.ha_api_key")
+
+# Immich API key file (mounted from host auth directory)
+IMMICH_API_KEY_FILE = os.getenv("IMMICH_API_KEY_FILE", "/root/.auth/.immich_api_key")
+
 # Unraid notify script (mounted from host)
 UNRAID_NOTIFY = os.getenv("UNRAID_NOTIFY", "/usr/local/emhttp/plugins/dynamix/scripts/notify")
 
@@ -56,6 +62,49 @@ def load_github_token() -> bool:
             print(f"[ERROR] Failed to read token file: {e}")
     
     print(f"[ERROR] No GitHub token found. Set GH_TOKEN env var or create {COPILOT_TOKEN_FILE}")
+    return False
+
+
+def load_ha_token() -> bool:
+    """Load Home Assistant token from file and set environment variable."""
+    if os.getenv("HA_TOKEN"):
+        print("[AUTH] Using HA token from environment variable")
+        return True
+
+    if os.path.exists(HA_TOKEN_FILE):
+        try:
+            with open(HA_TOKEN_FILE) as f:
+                token = f.read().strip()
+            if token:
+                os.environ["HA_TOKEN"] = token
+                print(f"[AUTH] Loaded HA token from {HA_TOKEN_FILE}")
+                return True
+        except Exception as e:
+            print(f"[ERROR] Failed to read HA token file: {e}")
+
+    print(f"[WARN] No HA token found. Set HA_TOKEN env var or create {HA_TOKEN_FILE}")
+    return False
+
+
+def load_immich_api_key() -> bool:
+    """Load Immich API key from file and set environment variable."""
+    if os.getenv("IMMICH_API_KEY"):
+        print("[AUTH] Using Immich API key from environment variable")
+        return True
+
+    if os.path.exists(IMMICH_API_KEY_FILE):
+        try:
+            with open(IMMICH_API_KEY_FILE) as f:
+                key = f.read().strip()
+            if key:
+                os.environ["IMMICH_API_KEY"] = key
+                print(f"[AUTH] Loaded Immich API key from {IMMICH_API_KEY_FILE}")
+                return True
+        except Exception as e:
+            print(f"[ERROR] Failed to read Immich API key file: {e}")
+
+    # Immich isn't always used; keep this non-fatal.
+    print(f"[INFO] No Immich API key found at {IMMICH_API_KEY_FILE}")
     return False
 
 
@@ -310,6 +359,10 @@ def main():
     if not load_github_token():
         print("[ERROR] Cannot proceed without GitHub authentication")
         return 1
+
+    # Load other tokens used by the prompt (non-fatal if missing)
+    load_ha_token()
+    load_immich_api_key()
     
     # Load instructions
     instructions = load_prompt()

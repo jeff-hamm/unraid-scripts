@@ -3,6 +3,7 @@ set -euo pipefail
 
 BLUETOOTHD_BIN="/usr/sbin/bluetoothd"
 CRON_FILE="/etc/cron.d/bluetooth-watchdog"
+NULL_SINK="/root/null"
 
 log() {
   echo "[bluez-experimental] $*"
@@ -38,7 +39,7 @@ start_bluetoothd_experimental() {
 
   # On some systems bluetoothd may not daemonize as expected; always start it
   # detached so this script never blocks boot.
-  nohup "$BLUETOOTHD_BIN" --experimental >/dev/null 2>&1 &
+  nohup "$BLUETOOTHD_BIN" --experimental >"$NULL_SINK" 2>&1 &
 
   # Wait briefly for the process to appear.
   local i
@@ -57,11 +58,17 @@ start_bluetoothd_experimental() {
 }
 
 install_watchdog_cron() {
+  if [[ ! -x "$BLUETOOTHD_BIN" ]]; then
+    rm -f "$CRON_FILE" 2>/dev/null || true
+    log "bluetoothd not present; watchdog cron not installed"
+    return 0
+  fi
+
   # Unraid rootfs is ephemeral; re-install this file every boot.
   cat >"$CRON_FILE" <<'EOF'
 # Ensure bluetoothd stays running with --experimental.
-# Recreated at boot by /root/hammassistant/boot.d/50-bluez-experimental.sh
-* * * * * root /bin/bash -lc 'pgrep -ax bluetoothd | grep -q -- "--experimental" || { pkill -x bluetoothd >/dev/null 2>&1 || true; nohup /usr/sbin/bluetoothd --experimental >/dev/null 2>&1 & }'
+# Recreated at boot by phome/boot.d/50-bluez-experimental.sh
+* * * * * root /bin/bash -lc 'test -x /usr/sbin/bluetoothd || exit 0; pgrep -ax bluetoothd | /usr/bin/grep -q -- "--experimental" || { /usr/bin/pkill -x bluetoothd >/root/null 2>&1 || true; /usr/bin/nohup /usr/sbin/bluetoothd --experimental >/root/null 2>&1 & }'
 EOF
 
   chmod 0644 "$CRON_FILE" || true

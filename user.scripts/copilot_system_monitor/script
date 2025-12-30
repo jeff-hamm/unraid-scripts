@@ -1,0 +1,4 @@
+#!/bin/bash
+# Copilot System Monitor - User Script Wrapper
+APP_ROOT="${APP_ROOT:-/mnt/pool/appdata}"
+exec bash "$APP_ROOT/ai-system-monitor/run.sh" "$@"

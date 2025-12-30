@@ -10,7 +10,7 @@
 set -e
 
 # Configuration paths
-CLOUDFLARED_CONFIG="/root/appdata/networking/cloudflared/config.yml"
+CLOUDFLARED_CONFIG="/root/appdata/networking/docker/cloudflared/config.yml"
 HA_INGRESS_CONFIG="/root/appdata/hammassistant/config/yaml/global/ingress.yaml"
 COMPOSE_DIR="/root/appdata/networking"
 

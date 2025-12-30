@@ -47,12 +47,13 @@ services:
       - ${APP_ROOT:-/mnt/pool/appdata}/immich/docker:/app/immich:ro
       - ${APP_ROOT:-/mnt/pool/appdata}/jumpflix/docker:/app/jumpflix:ro
       - ${APP_ROOT:-/mnt/pool/appdata}/chadburn/docker-compose.yml:/app/chadburn/docker-compose.yml:rw
+      - ${APP_ROOT:-/mnt/pool/appdata}/hammassistant:/app/hammassistant:ro
       # Full appdata access (read-only)
       - ${APP_ROOT:-/mnt/pool/appdata}:${APP_ROOT:-/mnt/pool/appdata}:ro
       # Auth tokens directory
       - /root/.auth:/root/.auth:ro
       # Prompt file (mounted for easy editing without rebuild)
-      - ${APP_PATH}/copilot_prompt.md:/app/copilot_prompt.md:ro
+      - ${STATE_DIR}/copilot_prompt.md:/app/copilot_prompt.md:ro
     working_dir: /app
     network_mode: bridge
     labels:

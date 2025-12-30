@@ -94,62 +94,36 @@ immich-jobs          # Check status
 immich-jobs resume   # Resume if paused
 ```
 
-
-### 4. VMs
-```bash
-host_cmd virsh list --all
-```
-
-### 5. Jumpflix
+### 4. Jumpflix
 Investigate the services of the jumpflix stack, identify any problems, investigate them and include them in your report.
 
 ---
 
 ## Home Assistant Deep Inspection
 
-The HA VM `hammassistant` at 192.168.1.179 requires thorough daily checks.
+The HA docker container `hammassistant` requires thorough daily checks.
 
-If the VM is offline, investigate why. 
+If any of the services in `/mnt/pool/appdata/hammassistant` is offline, investigate why. 
 Try starting it, if it it doesn't start. Try to diagnose the issue without making changes.
-***Do NOT stop or restart the VM if it is running!***
+***Do NOT stop or restart the containers if it is running!***
 
 ### Quick Health
 ```bash
 curl -s -m 5 -H "Authorization: Bearer $HA_TOKEN" \
-  http://192.168.1.179:8123/api/config | \
+  http://192.168.1.216:8123/api/config | \
   python3 -c "import sys,json; d=json.load(sys.stdin); print(f'HA {d[\"version\"]} @ {d[\"location_name\"]}')"
 ```
 
 ### Check for Updates
 ```bash
 curl -s -H "Authorization: Bearer $HA_TOKEN" \
-  http://192.168.1.179:8123/api/states/update.home_assistant_core_update | \
+  http://192.168.1.216:8123/api/states/update.home_assistant_core_update | \
   python3 -c "import sys,json; s=json.load(sys.stdin); a=s['attributes']; print(f\"Core: {a.get('installed_version')} -> {a.get('latest_version')} ({'UPDATE AVAILABLE' if s['state']=='on' else 'up to date'})\")"
 ```
 ### Check HA Logs
 ```bash
-curl -s -H "Authorization: Bearer $HA_TOKEN" "http://192.168.1.179:8123/api/error_log" | tail -50
+curl -s -H "Authorization: Bearer $HA_TOKEN" "http://192.168.1.216:8123/api/error_log" | tail -50
 ```
-
-### If Port 8123 Not Responding
-```bash
-virsh qemu-agent-command hammassistant \
-  '{"execute":"guest-exec","arguments":{"path":"docker","arg":["start","homeassistant"],"capture-output":true}}'
-```
-
-### USB Passthrough Monitoring
-**Watch for**: Bluetooth devies causing kernel errors.
-
-Check host dmesg for:
-```bash
-host_cmd dmesg | grep -c "did not claim interface"
-```
-
-If you see repeated `usbfs: process (CPU X/KVM) did not claim interface 0 before use` errors for device `3-1.1`:
-- This indicates USB passthrough driver conflict between host btusb module and QEMU
-- The VM USB config should have `managed='yes'` (fixed 2024-12-04)
-- If errors recur at high rate (not just during VM boot), alert user
-- A burst of these during VM startup is normal; continuous spam is not
 
 ---
 
