@@ -44,8 +44,8 @@ else
 fi
 
 # Create event.d directory structure in PHOME if it doesn't exist
-mkdir -p "$PHOME/event.d/disks_mounted"
-mkdir -p "$PHOME/event.d/unmounting_disks"
+mkdir -p "$PHOME/event.d/starting/"{01-driver_loaded,02-starting,03-array_started,04-disks_mounted,05-svcs_restarted,06-docker_started,07-libvirt_started,08-started}
+mkdir -p "$PHOME/event.d/stopping/"{01-stopping,02-stopping_libvirt,03-stopping_docker,04-stopping_svcs,05-unmounting_disks,06-stopping_array,07-stopped}
 echo "  Created: $PHOME/event.d/ (for event-specific handlers)"
 
 # === 2. Run disks_mounted scripts now ===
@@ -63,9 +63,10 @@ if "$PLUGIN_DIR/event/any_event" disks_mounted; then
     echo "    - jumpraid-scripts plugin   → runs event.d scripts on emhttpd events"
     echo ""
     echo "  Script directories:"
-    echo "    - $PHOME/event.d/disks_mounted/      → boot scripts (run on array start)"
-    echo "    - $PHOME/event.d/unmounting_disks/   → shutdown scripts (run before disks unmount)"
-    echo "    - $PHOME/event.d/<event>/            → per-event handlers"
+    echo "    - $PHOME/event.d/starting/04-disks_mounted/      → boot scripts (run on array start)"
+    echo "    - $PHOME/event.d/stopping/05-unmounting_disks/   → shutdown scripts (run before disks unmount)"
+    echo "    - $PHOME/event.d/starting/<event>/               → array start event handlers"
+    echo "    - $PHOME/event.d/stopping/<event>/               → array stop event handlers"
     echo ""
     echo "  Logs:"
     echo "    - /root/boot.log                     → all boot/event activity"
