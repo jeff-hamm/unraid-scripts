@@ -1,0 +1,39 @@
+#!/bin/bash
+# Unmount git repo bind mounts before array stop
+# This prevents them from blocking /mnt/pool unmount
+
+REPO_BASE="/mnt/pool/appdata/unraid-scripts"
+
+log() {
+  echo "[unmount-git-binds] $*"
+  logger -t unmount-git-binds "$*"
+}
+
+unmount_if_mounted() {
+  local path="$1"
+  if mountpoint -q "$path" 2>/dev/null; then
+    log "Unmounting: $path"
+    umount "$path" 2>&1 | logger -t unmount-git-binds
+    if mountpoint -q "$path" 2>/dev/null; then
+      log "WARNING: Failed to unmount $path"
+      return 1
+    fi
+    log "Successfully unmounted: $path"
+  else
+    log "Not mounted (skipping): $path"
+  fi
+  return 0
+}
+
+main() {
+  log "Unmounting git repository bind mounts..."
+  
+  # Unmount in reverse order (deepest first)
+  unmount_if_mounted "$REPO_BASE/phome"
+  unmount_if_mounted "$REPO_BASE/user.scripts"
+  unmount_if_mounted "$REPO_BASE/ai-system-monitor"
+  
+  log "Git bind mount cleanup complete"
+}
+
+main "$@"

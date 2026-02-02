@@ -1,0 +1,1 @@
+Code Server installation and setup script. This mounts the install script from /mnt/pool/appdata/code-server and executes it.

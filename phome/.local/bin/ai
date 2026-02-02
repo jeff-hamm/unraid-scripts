@@ -1,0 +1,265 @@
+#!/usr/bin/env zsh
+# @desc AI helper wrappers around GitHub Copilot CLI
+#   Provides shortcuts for common AI-assisted tasks
+
+set -euo pipefail
+
+PHOME="${PHOME:-$HOME}"
+COPILOT_BIN="${COPILOT_BIN:-copilot}"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+usage() {
+    cat << 'EOF'
+Usage: ai <command> [options]
+
+AI helper wrappers around GitHub Copilot CLI.
+
+Commands:
+  autocomplete <file>    Generate/regenerate @desc header for a script or function file
+  commit [options]       Generate commit message and run git commit
+  help                   Show this help message
+
+Commit Options:
+  --all, -a              Stage all changes (git add --all) before committing
+  --push, -p             Push after committing
+
+Examples:
+  ai autocomplete ~/.local/bin/my-script
+  ai commit
+  ai commit --all --push
+  ai commit -ap
+EOF
+}
+
+# Check if copilot CLI is available
+check_copilot() {
+    if ! command -v "$COPILOT_BIN" &>/dev/null; then
+        echo -e "${RED}Error: GitHub Copilot CLI not found.${NC}" >&2
+        echo "Looking for: $COPILOT_BIN" >&2
+        echo "" >&2
+        echo "The Copilot CLI is typically installed via VS Code Copilot Chat extension." >&2
+        echo "You can also set COPILOT_BIN to the path of your copilot binary." >&2
+        return 1
+    fi
+}
+
+# Generate @desc for a script or function file
+cmd_autocomplete() {
+    local file="$1"
+    
+    if [[ -z "$file" ]]; then
+        echo -e "${RED}Error: No file specified${NC}" >&2
+        echo "Usage: ai autocomplete <file>" >&2
+        return 1
+    fi
+    
+    if [[ ! -f "$file" ]]; then
+        echo -e "${RED}Error: File not found: $file${NC}" >&2
+        return 1
+    fi
+    
+    check_copilot || return 1
+    
+    local filename="${file:t}"
+    local content
+    content=$(head -50 "$file")
+    
+    echo -e "${BLUE}Generating @desc for: $filename${NC}"
+    echo ""
+    
+    # Build the prompt with context
+    local prompt="You are helping maintain a zsh script/function collection on Unraid.
+
+RULES:
+- Every script must have a '# @desc One-line description' comment right after the shebang
+- Every function must have '# @desc' immediately before the function definition
+- Multiline descriptions use '#   Continuation line' format (note the 3 spaces after #)
+- Keep descriptions concise but informative
+- Focus on WHAT the script/function does, not HOW
+
+TASK:
+Analyze this file and generate the appropriate @desc comment(s).
+If @desc already exists, suggest improvements if needed.
+Output ONLY the @desc comment line(s), nothing else.
+
+FILE: $filename
+CONTENT:
+$content"
+
+    # Run copilot with the prompt
+    echo "$prompt" | "$COPILOT_BIN" -p "$(cat)" --allow-all 2>/dev/null || {
+        echo -e "${RED}Copilot failed. Trying interactive mode...${NC}"
+        echo ""
+        echo "$prompt"
+        echo ""
+        echo -e "${YELLOW}Copy the above and paste into copilot manually:${NC}"
+        echo "  copilot"
+    }
+}
+
+# Generate commit message and commit
+cmd_commit() {
+    local do_add_all=false
+    local do_push=false
+    local original_dir="$PWD"
+    
+    # Parse options
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --all|-a)
+                do_add_all=true
+                shift
+                ;;
+            --push|-p)
+                do_push=true
+                shift
+                ;;
+            -ap|-pa)
+                do_add_all=true
+                do_push=true
+                shift
+                ;;
+            *)
+                echo -e "${RED}Unknown option: $1${NC}" >&2
+                return 1
+                ;;
+        esac
+    done
+    
+    check_copilot || return 1
+    
+    # Get git root
+    local git_root
+    git_root=$(git rev-parse --show-toplevel 2>/dev/null) || {
+        echo -e "${RED}Error: Not in a git repository${NC}" >&2
+        return 1
+    }
+    
+    # If --all, cd to root and stage everything
+    if [[ "$do_add_all" == true ]]; then
+        echo -e "${BLUE}Staging all changes...${NC}"
+        cd "$git_root"
+        git add --all
+    fi
+    
+    # Check if there are staged changes
+    if ! git diff --cached --quiet 2>/dev/null; then
+        : # There are staged changes, continue
+    else
+        echo -e "${YELLOW}No staged changes to commit.${NC}"
+        echo "Use 'git add <files>' first, or 'ai commit --all' to stage everything."
+        cd "$original_dir"
+        return 1
+    fi
+    
+    # Get the diff for context
+    local diff_stat diff_content
+    diff_stat=$(git diff --cached --stat)
+    diff_content=$(git diff --cached | head -200)
+    
+    echo -e "${BLUE}Staged changes:${NC}"
+    echo "$diff_stat"
+    echo ""
+    
+    # Build prompt for commit message
+    local prompt="Generate a concise git commit message for these changes.
+
+RULES:
+- First line: type(scope): brief description (max 72 chars)
+- Types: feat, fix, docs, style, refactor, test, chore
+- Scope is optional but helpful (e.g., feat(utils): ...)
+- If changes span multiple scopes, omit scope
+- Be specific about WHAT changed, not HOW
+- Output ONLY the commit message, no explanation
+
+DIFF STAT:
+$diff_stat
+
+DIFF (first 200 lines):
+$diff_content"
+
+    echo -e "${BLUE}Generating commit message...${NC}"
+    
+    # Get commit message from copilot
+    local commit_msg
+    commit_msg=$("$COPILOT_BIN" -p "$prompt" --allow-all 2>/dev/null | tr -d '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    
+    if [[ -z "$commit_msg" ]]; then
+        echo -e "${RED}Failed to generate commit message${NC}" >&2
+        cd "$original_dir"
+        return 1
+    fi
+    
+    # Clean up the message (remove markdown code blocks if present)
+    commit_msg=$(echo "$commit_msg" | sed 's/^```[a-z]*//; s/```$//' | tr -d '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    
+    echo -e "${GREEN}Commit message:${NC} $commit_msg"
+    echo ""
+    
+    # Ask for confirmation
+    echo -e "${YELLOW}Proceed with commit? [Y/n/e(dit)]${NC}"
+    read -r response
+    
+    case "$response" in
+        n|N)
+            echo "Aborted."
+            cd "$original_dir"
+            return 1
+            ;;
+        e|E)
+            echo -e "${BLUE}Enter your commit message:${NC}"
+            read -r commit_msg
+            ;;
+    esac
+    
+    # Commit
+    git commit -m "$commit_msg"
+    
+    # Push if requested
+    if [[ "$do_push" == true ]]; then
+        echo ""
+        echo -e "${BLUE}Pushing...${NC}"
+        git push
+    fi
+    
+    # Return to original directory
+    cd "$original_dir"
+    
+    echo -e "${GREEN}Done!${NC}"
+}
+
+# Main entry point
+main() {
+    if [[ $# -eq 0 ]]; then
+        usage
+        return 0
+    fi
+    
+    local cmd="$1"
+    shift
+    
+    case "$cmd" in
+        autocomplete|ac)
+            cmd_autocomplete "$@"
+            ;;
+        commit|c)
+            cmd_commit "$@"
+            ;;
+        help|-h|--help)
+            usage
+            ;;
+        *)
+            echo -e "${RED}Unknown command: $cmd${NC}" >&2
+            usage
+            return 1
+            ;;
+    esac
+}
+
+main "$@"

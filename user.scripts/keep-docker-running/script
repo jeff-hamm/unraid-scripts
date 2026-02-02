@@ -1,48 +1,81 @@
 #!/bin/bash
 # Script to prevent Docker from stopping when array stops
 # This patches the array stop process to skip Docker shutdown
+# Docker runs on cache pool, independent of array
 
-# Backup original rc.docker if not already backed up
-if [ ! -f /etc/rc.d/rc.docker.original ]; then
-    cp /etc/rc.d/rc.docker /etc/rc.d/rc.docker.original
-fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ORIGINAL="/etc/rc.d/rc.docker.original"
+WRAPPER="/etc/rc.d/rc.docker"
+LOCAL_BACKUP="$SCRIPT_DIR/rc.docker.original"
 
-# Create a wrapper that ignores stop commands from array
-cat > /etc/rc.d/rc.docker.wrapper << 'EOF'
-#!/bin/bash
-# Wrapper to prevent array from stopping Docker
+log() {
+    echo "[keep-docker-running] $*"
+    logger -t keep-docker-running "$*"
+}
 
-# Source the original rc.docker functions
-ORIGINAL_SCRIPT="/etc/rc.d/rc.docker.original"
+# Install rc.docker.original - try multiple sources
+install_original() {
+    # Source 1: Already exists on system
+    if [[ -x "$ORIGINAL" ]] && grep -q "DOCKERD=" "$ORIGINAL" 2>/dev/null; then
+        log "rc.docker.original already installed"
+        # Update our local backup
+        cp "$ORIGINAL" "$LOCAL_BACKUP"
+        return 0
+    fi
+    
+    # Source 2: Local backup copy
+    if [[ -f "$LOCAL_BACKUP" ]] && grep -q "DOCKERD=" "$LOCAL_BACKUP" 2>/dev/null; then
+        log "Restoring rc.docker.original from local backup"
+        cp "$LOCAL_BACKUP" "$ORIGINAL"
+        chmod +x "$ORIGINAL"
+        return 0
+    fi
+    
+    # Source 3: Current rc.docker if it's the original (not our wrapper)
+    if [[ -f "$WRAPPER" ]] && grep -q "DOCKERD=" "$WRAPPER" 2>/dev/null && ! grep -q "is_array_stop" "$WRAPPER" 2>/dev/null; then
+        log "Backing up current rc.docker as original"
+        cp "$WRAPPER" "$ORIGINAL"
+        cp "$WRAPPER" "$LOCAL_BACKUP"
+        chmod +x "$ORIGINAL"
+        return 0
+    fi
+    
+    # Source 4: Download from Unraid GitHub
+    log "Downloading rc.docker.original from Unraid GitHub..."
+    if curl -sf "https://raw.githubusercontent.com/limetech/webgui/master/etc/rc.d/rc.docker" -o "$ORIGINAL"; then
+        chmod +x "$ORIGINAL"
+        cp "$ORIGINAL" "$LOCAL_BACKUP"
+        log "Downloaded and saved rc.docker.original"
+        return 0
+    fi
+    
+    log "ERROR: Could not obtain rc.docker.original from any source"
+    return 1
+}
 
-# Check if this is being called during array stop
-# by checking the calling process
-CALLER=$(ps -o comm= $PPID)
+# Install the wrapper
+install_wrapper() {
+    if [[ ! -f "$SCRIPT_DIR/rc.docker.wrapper" ]]; then
+        log "ERROR: rc.docker.wrapper not found in $SCRIPT_DIR"
+        return 1
+    fi
+    
+    cp "$SCRIPT_DIR/rc.docker.wrapper" "$WRAPPER"
+    chmod +x "$WRAPPER"
+    log "Installed Docker wrapper"
+    return 0
+}
 
-case "$1" in
-'stop'|'restart')
-  # If called from emhttp/mdcmd (array operations), skip Docker stop
-  if [[ "$CALLER" == "emhttp" ]] || [[ "$CALLER" == "mdcmd" ]] || pgrep -f "mdcmd stop" > /tmp/mdcmd.check; then
-    logger "Array is stopping but keeping Docker running (cache pool independent)"
-    exit 0
-  else
-    # Otherwise, allow normal Docker stop (manual or system shutdown)
-    exec $ORIGINAL_SCRIPT "$@"
-  fi
-  ;;
-*)
-  # Pass through all other commands
-  exec $ORIGINAL_SCRIPT "$@"
-  ;;
-esac
-EOF
-
-chmod +x /etc/rc.d/rc.docker.wrapper
-
-# Replace rc.docker with our wrapper
-cp /etc/rc.d/rc.docker.wrapper /etc/rc.d/rc.docker
+# Main installation
+install_original || exit 1
+install_wrapper || exit 1
 
 echo "Docker will now stay running when array stops"
-echo "Docker runs on: $(docker info 2>&1 | grep 'Docker Root Dir')"
+echo "Docker runs on: $(docker info 2>&1 | grep 'Docker Root Dir' || echo 'Docker not running')"
 echo ""
-echo "To revert: cp /etc/rc.d/rc.docker.original /etc/rc.d/rc.docker"
+echo "Files installed:"
+echo "  $ORIGINAL (original Unraid script)"
+echo "  $WRAPPER (wrapper that blocks array-stop)"
+echo "  $LOCAL_BACKUP (backup copy)"
+echo ""
+echo "To revert: cp $ORIGINAL $WRAPPER"

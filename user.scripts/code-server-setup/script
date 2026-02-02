@@ -1,0 +1,10 @@
+#!/bin/bash
+#name=Code Server Setup
+#description=Bind mount code-server scripts and run installation
+#backgroundOnly=true
+
+# Bind mount the install script
+mount --bind /mnt/pool/appdata/code-server/install.sh /boot/config/plugins/user.scripts/scripts/code-server-setup/install.sh 2>/dev/null || true
+
+# Run the installation
+/mnt/pool/appdata/code-server/install.sh

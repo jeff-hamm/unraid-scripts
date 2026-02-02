@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env zsh
+# @desc Persistent symlink/wrapper manager
 #
 # lnp - Persistent Symlink Manager
 # Creates symlinks and optionally adds them to shell_startup's symlinks.conf
@@ -43,10 +44,11 @@ expand_vars() {
 compress_vars() {
     local str="$1"
     # Order matters - most specific first
-    str="${str//$STARTUP_SCRIPT_DIR/\$STARTUP_SCRIPT_DIR}"
-    str="${str//$SCRIPTS_DIR/\$SCRIPTS_DIR}"
-    str="${str//$APP_ROOT/\$APP_ROOT}"
-    str="${str//$PHOME/\$PHOME}"
+    # Only compress if the variable is actually defined
+    [[ -n "${STARTUP_SCRIPT_DIR:-}" ]] && str="${str//$STARTUP_SCRIPT_DIR/\$STARTUP_SCRIPT_DIR}"
+    [[ -n "${SCRIPTS_DIR:-}" ]] && str="${str//$SCRIPTS_DIR/\$SCRIPTS_DIR}"
+    [[ -n "${APP_ROOT:-}" ]] && str="${str//$APP_ROOT/\$APP_ROOT}"
+    [[ -n "${PHOME:-}" ]] && str="${str//$PHOME/\$PHOME}"
     echo "$str"
 }
 
@@ -72,21 +74,40 @@ create_link() {
     
     # Check if target is in a bin directory
     if [[ "$target" == */bin/* ]]; then
-        # Create wrapper script
+        # Create wrapper script that handles both execution and sourcing
         local canonical_source="$(readlink -f "$source")"
         local shebang=$(head -1 "$canonical_source" 2>/dev/null)
-        local interpreter="bash"
+        local interpreter="zsh"
         
         case "$shebang" in
             *python3*|*python*) interpreter="python3" ;;
+            *zsh*) interpreter="zsh" ;;
             *bash*) interpreter="bash" ;;
             *sh*) interpreter="sh" ;;
         esac
         
         rm -f "$target"
         cat > "$target" << EOF
-#!/bin/bash
-exec $interpreter "$canonical_source" "\$@"
+#!/usr/bin/env zsh
+# Auto-generated wrapper for: $canonical_source
+# Supports both zsh and bash, sourcing and execution
+
+_wrapper_is_sourced() {
+    if [[ -n "\${ZSH_EVAL_CONTEXT:-}" ]]; then
+        [[ "\$ZSH_EVAL_CONTEXT" == *:file:* ]] && return 0
+    elif [[ -n "\${BASH_SOURCE[0]:-}" ]]; then
+        [[ "\${BASH_SOURCE[0]}" != "\${0}" ]] && return 0
+    fi
+    return 1
+}
+
+if _wrapper_is_sourced; then
+    # Sourced - source the real script
+    source "$canonical_source" "\$@"
+else
+    # Executed - run with appropriate interpreter
+    exec $interpreter "$canonical_source" "\$@"
+fi
 EOF
         chmod +x "$target"
         echo "Created wrapper: $target -> $canonical_source ($interpreter)"

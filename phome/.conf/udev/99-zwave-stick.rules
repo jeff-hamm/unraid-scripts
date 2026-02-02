@@ -1,0 +1,5 @@
+# Zooz 800 Z-Wave Stick - Create /dev/zwave symlink
+# Vendor: 1a86 (QinHeng Electronics)
+# Product: 55d4 (800 Z-Wave Stick)
+# Serial: 533D004242
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d4", SYMLINK+="zwave", MODE="0660", GROUP="dialout"

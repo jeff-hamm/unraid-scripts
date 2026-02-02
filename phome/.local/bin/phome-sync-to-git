@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env zsh
+# @desc Sync $PHOME to unraid-scripts git repo
 set -euo pipefail
 
 PHOME_DEFAULT="/mnt/pool/appdata/home"
@@ -9,7 +10,8 @@ PHOME="${PHOME:-$PHOME_DEFAULT}"
 REPO_DIR="${UNRAID_SCRIPTS_REPO:-$REPO_DEFAULT}"
 SUBDIR="$SUBDIR_DEFAULT"
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# zsh equivalent of BASH_SOURCE
+SCRIPT_DIR="${0:A:h}"
 SYNC_TO_GIT="$SCRIPT_DIR/sync-to-git"
 
 usage() {

@@ -1,0 +1,472 @@
+#!/usr/bin/env zsh
+# @desc Manage Cloudflare tunnel configuration
+#
+# Cloudflared utility for native installation
+# Manage cloudflared tunnel ingress rules and operations
+
+# Configuration paths
+PHOME="${PHOME:-/mnt/pool/appdata/home}"
+AUTH_PATH="${AUTH_PATH:-$PHOME/.auth}"
+APP_ROOT="${APP_ROOT:-/mnt/pool/appdata}"
+CLOUDFLARED_BIN="$PHOME/.local/bin/cloudflared"
+CONFIG_FILE="$APP_ROOT/networking/cloudflared/config.yml"
+CREDENTIALS_FILE="$AUTH_PATH/cloudflared/.credentials.json"
+CERT_FILE="$AUTH_PATH/cloudflared/cert.pem"
+PID_FILE="/var/run/cloudflared.pid"
+LOG_DIR="/var/log/cloudflared"
+HA_CONFIG_DIR="${APP_ROOT}/hammassistant/config"
+HA_INGRESS_CONFIG="$HA_CONFIG_DIR/yaml/global/ingress.yaml"
+
+# Function to find entry line number for hostname with optional path
+find_entry_line() {
+    local host="$1"
+    local path="$2"
+    
+    local line_nums
+    line_nums=$(grep -n "^- hostname: ${host}$" "$CONFIG_FILE" | cut -d: -f1)
+    
+    for line_num in $line_nums; do
+        local next_line=$((line_num + 1))
+        local next_content
+        next_content=$(sed -n "${next_line}p" "$CONFIG_FILE")
+        
+        if [ -n "$path" ]; then
+            # Looking for entry WITH path
+            if [[ "$next_content" =~ ^[[:space:]]*path:[[:space:]]*${path}$ ]]; then
+                echo "$line_num"
+                return 0
+            fi
+        else
+            # Looking for entry WITHOUT path (next line should be service, not path)
+            if [[ ! "$next_content" =~ ^[[:space:]]*path: ]]; then
+                echo "$line_num"
+                return 0
+            fi
+        fi
+    done
+    
+    return 1
+}
+
+# Function to check if hostname and subpath combination already exists
+check_existing_entry() {
+    local host="$1"
+    local path="$2"
+    
+    find_entry_line "$host" "$path" > /dev/null
+}
+
+# Function to update existing entry
+update_existing_entry() {
+    local host="$1"
+    local path="$2"
+    local new_service="$3"
+    
+    local hostname_line
+    hostname_line=$(find_entry_line "$host" "$path")
+    
+    if [ -z "$hostname_line" ]; then
+        return 1
+    fi
+    
+    local service_line
+    if [ -n "$path" ]; then
+        # Entry has path, service is 2 lines after hostname
+        service_line=$((hostname_line + 2))
+    else
+        # Entry has no path, service is 1 line after hostname
+        service_line=$((hostname_line + 1))
+    fi
+    
+    # Verify it's actually a service line before updating
+    local service_content
+    service_content=$(sed -n "${service_line}p" "$CONFIG_FILE")
+    if [[ "$service_content" =~ ^[[:space:]]*service: ]]; then
+        sed -i "${service_line}s|^[[:space:]]*service:.*|  service: $new_service|" "$CONFIG_FILE"
+        return 0
+    fi
+    
+    return 1
+}
+
+# Command: restart
+cmd_restart() {
+    echo "Restarting cloudflared native process..."
+    
+    # Check if cloudflared binary exists
+    if [ ! -f "$CLOUDFLARED_BIN" ]; then
+        echo "Error: cloudflared binary not found at $CLOUDFLARED_BIN"
+        exit 1
+    fi
+    
+    # Check if config file exists
+    if [ ! -f "$CONFIG_FILE" ]; then
+        echo "Error: $CONFIG_FILE not found"
+        exit 1
+    fi
+    
+    # Stop existing process
+    if [ -f "$PID_FILE" ]; then
+        OLD_PID=$(cat "$PID_FILE")
+        if kill -0 "$OLD_PID" 2>/dev/null; then
+            echo "  Stopping cloudflared (PID: $OLD_PID)..."
+            kill "$OLD_PID" 2>/dev/null
+            sleep 2
+            kill -9 "$OLD_PID" 2>/dev/null || true
+        fi
+        rm -f "$PID_FILE"
+    fi
+    
+    # Kill any stray cloudflared processes
+    pkill -f "cloudflared tunnel" 2>/dev/null || true
+    
+    # Create log directory if needed
+    mkdir -p "$LOG_DIR"
+    
+    # Start cloudflared again
+    echo "  Starting cloudflared tunnel..."
+    nohup "$CLOUDFLARED_BIN" tunnel \
+        --config "$CONFIG_FILE" \
+        --credentials-file "$CREDENTIALS_FILE" \
+        run \
+        > "$LOG_DIR/cloudflared.log" 2>&1 &
+    
+    CLOUDFLARED_PID=$!
+    echo "$CLOUDFLARED_PID" > "$PID_FILE"
+    
+    # Wait and verify it started successfully
+    sleep 3
+    if kill -0 "$CLOUDFLARED_PID" 2>/dev/null; then
+        echo "  ✓ Cloudflared restarted successfully (PID: $CLOUDFLARED_PID)"
+        echo "  Log: $LOG_DIR/cloudflared.log"
+    else
+        echo "  ERROR: Cloudflared failed to restart"
+        tail -20 "$LOG_DIR/cloudflared.log" 2>/dev/null
+        exit 1
+    fi
+}
+
+# Command: add
+cmd_add() {
+    if [ $# -lt 2 ] || [ $# -gt 4 ]; then
+        echo "Usage: cloudflared-util add <hostname> <service> [title] [icon]"
+        echo ""
+        echo "Examples:"
+        echo "  cloudflared-util add myapp.infinitebutts.com http://192.168.1.100:8080"
+        echo "  cloudflared-util add myapp.infinitebutts.com http://192.168.1.100:8080 'My App' 'mdi:web'"
+        echo ""
+        echo "This will:"
+        echo "  1. Add hostname to Cloudflare tunnel config"
+        echo "  2. Add entry to Home Assistant ingress panel"
+        echo "  3. Register DNS route with Cloudflare"
+        echo "  4. Restart cloudflared tunnel"
+        exit 1
+    fi
+    
+    local NEW_HOST="$1"
+    local SERVICE="$2"
+    local TITLE="${3:-}"
+    local ICON="${4:-mdi:web}"
+    
+    # Generate default title from hostname if not provided
+    if [ -z "$TITLE" ]; then
+        # Extract subdomain (e.g., "tdarr" from "tdarr.infinitebutts.com")
+        local SUBDOMAIN=$(echo "$NEW_HOST" | cut -d. -f1)
+        # Capitalize first letter
+        TITLE="$(echo "${SUBDOMAIN:0:1}" | tr '[:lower:]' '[:upper:]')${SUBDOMAIN:1}"
+    fi
+    
+    # Generate service key from subdomain (lowercase, alphanumeric only)
+    local SERVICE_KEY=$(echo "$NEW_HOST" | cut -d. -f1 | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_]/_/g')
+    
+    echo "=================================================="
+    echo "Adding Cloudflare tunnel host:"
+    echo "  Hostname: $NEW_HOST"
+    echo "  Service:  $SERVICE"
+    echo "  Title:    $TITLE"
+    echo "  Icon:     $ICON"
+    echo "  Key:      $SERVICE_KEY"
+    echo "=================================================="
+    echo ""
+    
+    # Validate service URL format
+    if [[ ! "$SERVICE" =~ ^https?://[^[:space:]]+$ ]]; then
+        echo "Error: Invalid service URL format. Must start with http:// or https://"
+        exit 1
+    fi
+    
+    # Check if config file exists
+    if [ ! -f "$CONFIG_FILE" ]; then
+        echo "Error: $CONFIG_FILE not found"
+        exit 1
+    fi
+    
+    # Check if cloudflared binary exists
+    if [ ! -f "$CLOUDFLARED_BIN" ]; then
+        echo "Error: cloudflared binary not found at $CLOUDFLARED_BIN"
+        exit 1
+    fi
+    
+    # ============================================
+    # 1. Update Cloudflare tunnel config
+    # ============================================
+    echo "Step 1: Updating Cloudflare tunnel config..."
+    
+    # Check if entry already exists and update if found
+    if check_existing_entry "$NEW_HOST" ""; then
+        echo "  Entry already exists in cloudflared config, updating service..."
+        
+        # Create a backup of the original config
+        cp "$CONFIG_FILE" "${CONFIG_FILE}.backup"
+        
+        if update_existing_entry "$NEW_HOST" "" "$SERVICE"; then
+            echo "  ✓ Updated cloudflared config"
+        else
+            echo "Error: Failed to update existing entry"
+            exit 1
+        fi
+    else
+        echo "  Adding new entry to cloudflared config..."
+        
+        # Create a backup of the original config
+        cp "$CONFIG_FILE" "${CONFIG_FILE}.backup"
+        
+        # Remove the final - service: http_status:404 line
+        sed -i '/^- service: http_status:404$/d' "$CONFIG_FILE"
+        
+        # Append the new hostname and service entry
+        cat >> "$CONFIG_FILE" << EOF
+- hostname: $NEW_HOST
+  service: $SERVICE
+- service: http_status:404
+EOF
+        echo "  ✓ Added to cloudflared config"
+    fi
+    
+    # ============================================
+    # 2. Update Home Assistant ingress panel
+    # ============================================
+    echo ""
+    echo "Step 2: Updating Home Assistant ingress panel..."
+    
+    if [ -f "$HA_INGRESS_CONFIG" ]; then
+        # Check if service key already exists in HA ingress config
+        if grep -q "^${SERVICE_KEY}:" "$HA_INGRESS_CONFIG"; then
+            echo "  Entry already exists in HA ingress, updating..."
+            # Create backup
+            cp "$HA_INGRESS_CONFIG" "${HA_INGRESS_CONFIG}.backup"
+            
+            # Find the service key line and update the fields
+            LINE_NUM=$(grep -n "^${SERVICE_KEY}:" "$HA_INGRESS_CONFIG" | head -1 | cut -d: -f1)
+            
+            # Update title, url, and icon (preserving other fields)
+            sed -i "${LINE_NUM},/^[a-z_]/s|^  title:.*|  title: $TITLE|" "$HA_INGRESS_CONFIG"
+            sed -i "${LINE_NUM},/^[a-z_]/s|^  url:.*|  url: $SERVICE|" "$HA_INGRESS_CONFIG"
+            sed -i "${LINE_NUM},/^[a-z_]/s|^  icon:.*|  icon: $ICON|" "$HA_INGRESS_CONFIG"
+            
+            echo "  ✓ Updated HA ingress config"
+        else
+            echo "  Adding new entry to HA ingress..."
+            # Create backup
+            cp "$HA_INGRESS_CONFIG" "${HA_INGRESS_CONFIG}.backup"
+            
+            # Append the new service entry to the end of the file
+            cat >> "$HA_INGRESS_CONFIG" << EOF
+
+${SERVICE_KEY}:
+  title: $TITLE
+  url: $SERVICE
+  icon: $ICON
+  work_mode: iframe
+EOF
+            echo "  ✓ Added to HA ingress config"
+        fi
+    else
+        echo "  ⚠ HA ingress config not found: $HA_INGRESS_CONFIG"
+        echo "  Skipping Home Assistant integration"
+    fi
+    
+    # ============================================
+    # 3. Add DNS route via Cloudflare
+    # ============================================
+    echo ""
+    echo "Step 3: Adding DNS route to Cloudflare..."
+    
+    # Extract tunnel ID from config file
+    TUNNEL_ID=$(grep "^tunnel:" "$CONFIG_FILE" | cut -d' ' -f2 | tr -d '\r')
+    if [ -z "$TUNNEL_ID" ]; then
+        echo "Error: Could not find tunnel ID in $CONFIG_FILE"
+        exit 1
+    fi
+    
+    echo "  Tunnel ID: $TUNNEL_ID"
+    echo "  Hostname:  $NEW_HOST"
+    
+    # Run cloudflared route dns command using local binary
+    if "$CLOUDFLARED_BIN" tunnel route dns \
+        --credentials-file "$CREDENTIALS_FILE" \
+        "$TUNNEL_ID" "$NEW_HOST" 2>&1 | grep -q "Successfully"; then
+        echo "  ✓ DNS route added"
+    else
+        echo "  ⚠ DNS route may already exist or failed (check manually if needed)"
+    fi
+    
+    # ============================================
+    # 4. Restart cloudflared
+    # ============================================
+    echo ""
+    echo "Step 4: Restarting cloudflared tunnel..."
+    cmd_restart
+    
+    echo ""
+    echo "=================================================="
+    echo "✓ Successfully configured $NEW_HOST"
+    echo "=================================================="
+    echo ""
+    echo "The service should now be accessible at:"
+    echo "  https://$NEW_HOST"
+    echo ""
+    if [ -f "$HA_INGRESS_CONFIG" ]; then
+        echo "And visible in Home Assistant ingress panel as:"
+        echo "  $TITLE"
+        echo ""
+    fi
+    echo "Note: DNS propagation may take a few minutes."
+    echo ""
+}
+
+# Command: status
+cmd_status() {
+    echo "Cloudflared Status:"
+    echo ""
+    
+    if [ -f "$PID_FILE" ]; then
+        PID=$(cat "$PID_FILE")
+        if kill -0 "$PID" 2>/dev/null; then
+            echo "  Status: Running"
+            echo "  PID: $PID"
+            echo "  Config: $CONFIG_FILE"
+            echo "  Log: $LOG_DIR/cloudflared.log"
+        else
+            echo "  Status: Not running (stale PID file)"
+            echo "  PID file: $PID_FILE"
+        fi
+    else
+        echo "  Status: Not running (no PID file)"
+    fi
+    
+    # Show running cloudflared processes
+    echo ""
+    echo "  Running cloudflared processes:"
+    if pgrep -f "cloudflared tunnel" > /dev/null; then
+        ps aux | grep "[c]loudflared tunnel"
+    else
+        echo "  None"
+    fi
+}
+
+# Command: logs
+cmd_logs() {
+    local lines="${1:-50}"
+    
+    if [ -f "$LOG_DIR/cloudflared.log" ]; then
+        echo "Last $lines lines from cloudflared log:"
+        echo ""
+        tail -n "$lines" "$LOG_DIR/cloudflared.log"
+    else
+        echo "Log file not found: $LOG_DIR/cloudflared.log"
+        exit 1
+    fi
+}
+
+# Command: stop
+cmd_stop() {
+    echo "Stopping cloudflared native process..."
+    
+    if [ -f "$PID_FILE" ]; then
+        OLD_PID=$(cat "$PID_FILE")
+        if kill -0 "$OLD_PID" 2>/dev/null; then
+            echo "  Stopping cloudflared (PID: $OLD_PID)..."
+            kill "$OLD_PID" 2>/dev/null
+            sleep 2
+            kill -9 "$OLD_PID" 2>/dev/null || true
+            echo "  ✓ Cloudflared stopped"
+        else
+            echo "  Process not running (stale PID file)"
+        fi
+        rm -f "$PID_FILE"
+    else
+        echo "  No PID file found"
+    fi
+    
+    # Kill any stray cloudflared processes
+    if pkill -f "cloudflared tunnel" 2>/dev/null; then
+        echo "  Killed stray cloudflared processes"
+    fi
+}
+
+# Show usage
+show_usage() {
+    cat << EOF
+Usage: cloudflared-util <command> [options]
+
+Commands:
+  add <hostname> <service> [title] [icon]   Add or update ingress rule with HA integration
+  restart                                    Restart cloudflared tunnel
+  stop                                       Stop cloudflared tunnel
+  status                                     Show cloudflared status
+  logs [lines]                               Show cloudflared logs (default: 50 lines)
+
+Examples:
+  cloudflared-util add myapp.infinitebutts.com http://192.168.1.100:8080
+  cloudflared-util add myapp.infinitebutts.com http://192.168.1.100:8080 'My App' 'mdi:web'
+  cloudflared-util restart
+  cloudflared-util status
+  cloudflared-util logs 100
+  cloudflared-util stop
+
+Configuration:
+  Binary: $CLOUDFLARED_BIN
+  Config: $CONFIG_FILE
+  Credentials: $CREDENTIALS_FILE
+  Log: $LOG_DIR/cloudflared.log
+  PID: $PID_FILE
+  HA Ingress: $HA_INGRESS_CONFIG
+EOF
+}
+
+# Main command dispatcher
+if [ $# -eq 0 ]; then
+    show_usage
+    exit 1
+fi
+
+COMMAND="$1"
+shift
+
+case "$COMMAND" in
+    add)
+        cmd_add "$@"
+        ;;
+    restart)
+        cmd_restart
+        ;;
+    stop)
+        cmd_stop
+        ;;
+    status)
+        cmd_status
+        ;;
+    logs)
+        cmd_logs "$@"
+        ;;
+    help|--help|-h)
+        show_usage
+        ;;
+    *)
+        echo "Error: Unknown command '$COMMAND'"
+        echo ""
+        show_usage
+        exit 1
+        ;;
+esac

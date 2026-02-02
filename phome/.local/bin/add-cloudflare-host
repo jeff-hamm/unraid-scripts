@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env zsh
+# @desc Add/manage Cloudflare tunnel hosts
 #
 # add-cloudflare-host - Add a hostname to Cloudflare tunnel and HA ingress panel
 #

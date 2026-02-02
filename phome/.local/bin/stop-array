@@ -1,0 +1,54 @@
+#!/usr/bin/env zsh
+# @desc Stop mover and array, then tail the log
+# Stop mover (if running) then stop the Unraid array and tail the stop log
+
+set -e
+
+LOGFILE="/var/log/unraid-array-stop.log"
+
+echo "=== Unraid Array Stop Script ===" | tee "$LOGFILE"
+date | tee -a "$LOGFILE"
+echo "" | tee -a "$LOGFILE"
+
+# Check if mover is running and stop it
+if pgrep -x mover > /dev/null; then
+    echo "Mover is running, stopping it first..." | tee -a "$LOGFILE"
+    /usr/local/sbin/mover stop >> "$LOGFILE" 2>&1
+    
+    # Wait for mover to actually stop
+    local timeout=30
+    while pgrep -x mover > /dev/null && [[ $timeout -gt 0 ]]; do
+        echo "Waiting for mover to stop... ($timeout seconds remaining)" | tee -a "$LOGFILE"
+        sleep 1
+        ((timeout--))
+    done
+    
+    if pgrep -x mover > /dev/null; then
+        echo "WARNING: Mover did not stop within 30 seconds" | tee -a "$LOGFILE"
+    else
+        echo "Mover stopped successfully" | tee -a "$LOGFILE"
+    fi
+else
+    echo "Mover is not running" | tee -a "$LOGFILE"
+fi
+
+echo "" | tee -a "$LOGFILE"
+
+# Check if array is started
+if [[ -f /var/local/emhttp/var.ini ]] && grep -q "mdState=STARTED" /var/local/emhttp/var.ini; then
+    echo "Array is started, stopping it now..." | tee -a "$LOGFILE"
+    echo "" | tee -a "$LOGFILE"
+    
+    # Stop the array
+    /usr/local/sbin/emcmd cmdStop=Stop >> "$LOGFILE" 2>&1
+    
+    echo "" | tee -a "$LOGFILE"
+    echo "Array stop command issued. Tailing log..." | tee -a "$LOGFILE"
+    echo "========================================" | tee -a "$LOGFILE"
+    
+    # Tail the log file
+    tail -f "$LOGFILE"
+else
+    echo "Array is not started" | tee -a "$LOGFILE"
+    exit 0
+fi

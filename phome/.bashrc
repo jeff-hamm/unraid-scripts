@@ -2,17 +2,10 @@
 # Custom bashrc for Unraid
 # Copied to /root/.bashrc by shell_startup User Script
 source /etc/profile
-source /root/.bash_profile
+# Don't source .bash_profile from .bashrc (causes loops) - it's sourced by login shells
 
-# Source environment variables from .env if it exists
-# (looks in the directory where this bashrc actually lives, following symlinks)
-_bashrc_dir="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
-if [[ -f "$_bashrc_dir/.env" ]]; then
-    set -a  # automatically export all variables
-    source "$_bashrc_dir/.env"
-    set +a
-fi
-unset _bashrc_dir
+# Source app-envs to load environment variables
+. app-envs
 
 
 # Docker aliases

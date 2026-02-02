@@ -1,0 +1,88 @@
+#!/bin/bash
+# rc.docker wrapper - Prevents array-stop from killing Docker
+# Docker runs on cache pool, independent of the array
+#
+# On array-stop: Skip Docker shutdown (Docker stays running)
+# On system shutdown/reboot: Run shutdown.d scripts, then stop Docker normally
+
+ORIGINAL_SCRIPT="/etc/rc.d/rc.docker.original"
+PHOME="${PHOME:-/mnt/pool/appdata/home}"
+SHUTDOWN_D="$PHOME/shutdown.d"
+
+# Verify original script exists
+if [[ ! -x "$ORIGINAL_SCRIPT" ]]; then
+    logger -t rc.docker "ERROR: $ORIGINAL_SCRIPT not found or not executable"
+    exit 1
+fi
+
+# Get parent process name to detect context
+CALLER=$(ps -o comm= $PPID 2>/dev/null)
+GRANDPARENT=$(ps -o comm= $(ps -o ppid= $PPID 2>/dev/null) 2>/dev/null)
+
+is_system_shutdown() {
+    # Check if this is a genuine system shutdown/reboot
+    # These callers indicate real shutdown, not array-stop
+    local shutdown_callers="powerdown|reboot|shutdown|halt|init|rc\.0|rc\.6|rc\.K|rc\.shutdown|systemd"
+    
+    [[ "$CALLER" =~ ^($shutdown_callers)$ ]] && return 0
+    [[ "$GRANDPARENT" =~ ^($shutdown_callers)$ ]] && return 0
+    
+    # Check for shutdown/reboot in progress
+    [[ -f /etc/nologin ]] && return 0
+    runlevel 2>/dev/null | grep -qE '[06]' && return 0
+    
+    return 1
+}
+
+is_array_stop() {
+    # Check if this is an array-stop operation
+    [[ "$CALLER" == "emhttp" ]] && return 0
+    [[ "$CALLER" == "mdcmd" ]] && return 0
+    pgrep -f "mdcmd stop" > /dev/null 2>&1 && return 0
+    return 1
+}
+
+run_shutdown_scripts() {
+    # Run all shutdown.d scripts before stopping Docker
+    if [[ -d "$SHUTDOWN_D" ]]; then
+        logger -t rc.docker "Running shutdown.d scripts..."
+        for script in "$SHUTDOWN_D"/*.sh; do
+            if [[ -x "$script" ]]; then
+                logger -t rc.docker "Executing: $(basename "$script")"
+                MODE="shutdown" "$script" || logger -t rc.docker "WARNING: $script failed"
+            fi
+        done
+        logger -t rc.docker "Completed shutdown.d scripts"
+    fi
+}
+
+case "$1" in
+'stop')
+    if is_system_shutdown; then
+        # Real shutdown/reboot - run shutdown scripts then stop Docker
+        logger -t rc.docker "System shutdown detected, stopping Docker gracefully"
+        run_shutdown_scripts
+        # 99-stop-docker.sh already stopped Docker, but call original just in case
+        exec "$ORIGINAL_SCRIPT" stop
+    elif is_array_stop; then
+        # Array stopping but not system shutdown - keep Docker running
+        logger -t rc.docker "Array stopping but Docker stays running (cache pool independent)"
+        exit 0
+    else
+        # Manual docker stop or unknown context - allow it
+        logger -t rc.docker "Manual Docker stop requested"
+        exec "$ORIGINAL_SCRIPT" stop
+    fi
+    ;;
+'restart')
+    if is_array_stop; then
+        logger -t rc.docker "Array operation - skipping Docker restart"
+        exit 0
+    fi
+    exec "$ORIGINAL_SCRIPT" restart
+    ;;
+*)
+    # Pass through all other commands (start, status, etc.)
+    exec "$ORIGINAL_SCRIPT" "$@"
+    ;;
+esac

@@ -29,17 +29,28 @@ log() {
 
 log "Event received: $EVENT (args: $*)"
 
-# Delegate to event-specific scripts in PHOME/event.d/<event>/
-# e.g., /mnt/pool/appdata/home/event.d/disks_mounted/*.sh
-EVENT_DIR="${EVENT_D}/${EVENT}"
-if [[ -d "$EVENT_DIR" ]]; then
-    for script in "$EVENT_DIR"/*.sh; do
-        [[ -x "$script" ]] || continue
-        log "Running: $script"
-        if "$script" "$@" >> "$BOOT_LOG" 2>&1; then
-            log "  ✓ $script completed"
-        else
-            log "  ✗ $script failed (exit: $?)"
-        fi
+# Delegate to event-specific scripts in PHOME/event.d/starting|stopping/<numbered-event>/
+# Event directories are organized by lifecycle phase:
+#   starting/04-disks_mounted/*.sh
+#   stopping/05-unmounting_disks/*.sh
+# Search both starting/ and stopping/ for matching event directories
+for phase_dir in "$EVENT_D"/starting "$EVENT_D"/stopping; do
+    [[ -d "$phase_dir" ]] || continue
+    
+    # Find directories matching the event name (with or without number prefix)
+    # e.g., "disks_mounted" matches "04-disks_mounted"
+    for event_dir in "$phase_dir"/*-"$EVENT" "$phase_dir"/"$EVENT"; do
+        [[ -d "$event_dir" ]] || continue
+        
+        log "Checking: $event_dir"
+        for script in "$event_dir"/*.sh; do
+            [[ -x "$script" ]] || continue
+            log "Running: $script"
+            if "$script" "$@" >> "$BOOT_LOG" 2>&1; then
+                log "  ✓ $script completed"
+            else
+                log "  ✗ $script failed (exit: $?)"
+            fi
+        done
     done
-fi
+done

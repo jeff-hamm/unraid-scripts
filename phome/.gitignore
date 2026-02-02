@@ -52,7 +52,14 @@ Thumbs.db
 # --- Local tools (keep scripts, ignore installed payloads) ---
 .local/lib/
 .local/share/
-# Large binaries / installed tools (reinstallable)
-.local/bin/gh
-.local/bin/lazydocker
-.local/bin/git-filter-repo
+.local/opt/
+.logs
+# --- Symlink to /dev/null ---
+null
+
+# --- Local plugin/script symlinks (point to system locations) ---
+plugins/
+scripts/
+
+# --- Backup files ---
+*.bak

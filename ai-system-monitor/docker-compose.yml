@@ -1,3 +1,5 @@
+name: ai-system-monitor
+
 services:
   copilot-system-monitor:
     build:

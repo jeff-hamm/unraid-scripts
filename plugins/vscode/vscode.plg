@@ -1,0 +1,73 @@
+<?xml version='1.0' standalone='yes'?>
+<!DOCTYPE PLUGIN>
+
+<PLUGIN 
+  name="vscode"
+  author="Local"
+  version="2024.12.30d"
+  min="6.12.0"
+>
+
+<CHANGES>
+<![CDATA[
+### 2024.12.30d
+- Reorganized: Split into multiple files, install.sh handles everything
+- Includes nginx reverse proxy configuration
+- Includes boot/shutdown scripts for code-server
+- Auto-installs code-server binary if missing
+
+### 2024.12.30c
+- Fixed: VS Code now appears as top-level tab
+- Uses nginx reverse proxy at /vscode-server/
+
+### 2024.12.30
+- Initial release
+- Adds VS Code Server tab to Unraid UI
+]]>
+</CHANGES>
+
+<!--
+The 'install' script - handled by install.sh in the plugin directory
+-->
+<FILE Run="/bin/bash">
+<INLINE>
+<![CDATA[
+echo "VS Code plugin installation complete."
+echo "Tab should appear in top menu bar after nginx reload."
+]]>
+</INLINE>
+</FILE>
+
+<!--
+The 'remove' script.
+-->
+<FILE Run="/bin/bash" Method="remove">
+<INLINE>
+<![CDATA[
+# Remove UI components
+rm -rf /usr/local/emhttp/plugins/vscode
+
+# Remove boot scripts
+rm -f /mnt/pool/appdata/home/boot.d/50-code-server.sh
+rm -f /mnt/pool/appdata/home/boot.d/51-code-server-nginx.sh
+
+# Remove shutdown scripts
+rm -f /mnt/pool/appdata/home/shutdown.d/50-code-server.sh
+
+# Stop code-server if running
+pkill -f "code-server-.*-linux-amd64" 2>/dev/null
+
+# Remove nginx config (manual step required)
+echo ""
+echo "-----------------------------------------------------------"
+echo " VS Code plugin has been removed."
+echo " "
+echo " Manual step: Remove the code-server location block from:"
+echo " /etc/nginx/conf.d/locations.conf"
+echo "-----------------------------------------------------------"
+echo ""
+]]>
+</INLINE>
+</FILE>
+
+</PLUGIN>

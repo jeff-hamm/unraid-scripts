@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env zsh
+# @desc Sync directory to git repo using git-tracked files
 set -euo pipefail
 
 usage() {
