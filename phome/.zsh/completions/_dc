@@ -67,22 +67,22 @@ _dc_completion() {
         'stop:Stop services'
         'top:Display the running processes'
         'unpause:Unpause services'
-        'up:Create and start containers', service names, and container names
-        if [[ ${#containers[@]} -gt 0 ]]; then
-            _describe 'project, service, or container' projects services containers
-        else
-            _describe 'project or service' projects serviceservice and rebuild/refresh containers when files are updated'
+        'up:Create and start containers'
+        'version:Show the Docker Compose version information'
+        'volumes:List volumes'
+        'wait:Block until containers of all (or specified) services stop'
+        'watch:Watch build context for service and rebuild/refresh containers when files are updated'
     )
     
     if (( CURRENT == 2 )); then
         # First argument: offer docker-compose commands
         _describe 'docker-compose command' docker_compose_commands
     elif (( CURRENT == 3 )); then
-        # Second argument: offer project names AND container names
+        # Second argument: offer project names, service names, and container names
         if [[ ${#containers[@]} -gt 0 ]]; then
-            _describe 'project or container' projects containers
+            _describe 'project, service, or container' projects services containers
         else
-            _describe 'project' projects
+            _describe 'project or service' projects services
         fi
     elif (( CURRENT >= 4 )); then
         # Additional arguments: offer services for the selected project
