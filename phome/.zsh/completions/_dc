@@ -13,6 +13,18 @@ _dc_completion() {
         projects+=("$project:Docker compose project")
     done
     
+    # Build container names from running containers (only those in our projects)
+    local -a containers
+    if (( CURRENT == 3 )); then
+        # Get containers that belong to our compose projects
+        for project in ${(k)DC_PROJECTS}; do
+            local project_containers=($(docker ps --filter "label=com.docker.compose.project=$project" --format '{{.Names}}' 2>/dev/null))
+            for container in $project_containers; do
+                containers+=("$container:Container in $project")
+            done
+        done
+    fi
+    
     local -a docker_compose_commands
     docker_compose_commands=(
         'attach:Attach local standard input, output, and error streams to a service'\''s running container'
@@ -55,8 +67,20 @@ _dc_completion() {
         # First argument: offer docker-compose commands
         _describe 'docker-compose command' docker_compose_commands
     elif (( CURRENT == 3 )); then
-        # Second argument: offer project names
-        _describe 'project' projects
+        # Second argument: offer project names AND container names
+        _alternative \
+            'projects:project:_describe "project" projects' \
+            'containers:container:_describe "container" containers'
+    elif (( CURRENT >= 4 )); then
+        # Additional arguments: offer services for the selected project
+        local project="${words[3]}"
+        if [[ -n "${DC_PROJECT_SERVICES[$project]}" ]]; then
+            local -a services
+            for service in ${=DC_PROJECT_SERVICES[$project]}; do
+                services+=("$service")
+            done
+            _describe 'service' services
+        fi
     fi
 }
 

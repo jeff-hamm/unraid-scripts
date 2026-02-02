@@ -1,8 +1,8 @@
 #!/usr/bin/env zsh
 # @desc Docker compose wrapper with project shortcuts
-# Smart docker-compose wrapper with project name detection
-# Usage: dc <command> <name>  - automatically finds and uses correct docker-compose.yml
-#        dc <command>          - pass through to docker-compose in current directory
+# Smart docker-compose wrapper with project name or container name detection
+# Usage: dc <command> <project-or-container>  - finds and uses correct docker-compose.yml
+#        dc <command>                         - pass through to docker-compose in current directory
 
 # Load project mappings from config
 PHOME="${PHOME:-/mnt/pool/appdata/home}"
@@ -11,16 +11,68 @@ source "${PHOME}/.conf/dc-projects.conf" 2>/dev/null || {
     return 1
 }
 
-# Check if second arg is a known project name
-if [[ -n "$2" && -n "${DC_PROJECTS[$2]}" ]]; then
+# Function to find project by container name
+_find_project_by_container() {
+    local container_name="$1"
+    local found_projects=()
+    
+    # Get the compose project label from the container
+    local project_label=$(docker inspect "$container_name" --format '{{index .Config.Labels "com.docker.compose.project"}}' 2>/dev/null)
+    
+    if [[ -n "$project_label" ]]; then
+        # Find matching project in our config
+        for project in ${(k)DC_PROJECTS}; do
+            if [[ "$project" == "$project_label" ]]; then
+                echo "$project"
+                return 0
+            fi
+        done
+    fi
+    
+    return 1
+}
+
+# Resolve name (could be project or container)
+_resolve_target() {
+    local name="$1"
+    
+    # First check if it's a known project name
+    if [[ -n "${DC_PROJECTS[$name]}" ]]; then
+        echo "$name"
+        return 0
+    fi
+    
+    # Try to find it as a container name
+    local project=$(_find_project_by_container "$name")
+    if [[ -n "$project" ]]; then
+        echo "$project"
+        return 0
+    fi
+    
+    return 1
+}
+
+# Main logic
+if [[ -n "$2" ]]; then
     command="$1"
-    project="$2"
+    target="$2"
+    
+    # Resolve target to project name
+    project=$(_resolve_target "$target")
+    
+    if [[ -z "$project" ]]; then
+        echo "Error: Unknown project or container: $target" >&2
+        echo "Known projects: ${(j:, :)${(ko)DC_PROJECTS}}" >&2
+        return 1
+    fi
+    
     shift 2
     local original_dir="$PWD"
     cd "${DC_PROJECTS[$project]}" || {
         echo "Error: Directory not found: ${DC_PROJECTS[$project]}" >&2
         return 1
     }
+    
     if [[ "$command" == "up" ]]; then
         docker-compose up -d "$@"
         local exit_code=$?
