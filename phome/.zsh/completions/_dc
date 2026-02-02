@@ -68,9 +68,11 @@ _dc_completion() {
         _describe 'docker-compose command' docker_compose_commands
     elif (( CURRENT == 3 )); then
         # Second argument: offer project names AND container names
-        _alternative \
-            'projects:project:_describe "project" projects' \
-            'containers:container:_describe "container" containers'
+        if [[ ${#containers[@]} -gt 0 ]]; then
+            _describe 'project or container' projects containers
+        else
+            _describe 'project' projects
+        fi
     elif (( CURRENT >= 4 )); then
         # Additional arguments: offer services for the selected project
         local project="${words[3]}"
