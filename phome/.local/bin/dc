@@ -1,13 +1,29 @@
 #!/usr/bin/env zsh
 # @desc Docker compose wrapper with project shortcuts
-# Smart docker-compose wrapper with project name or container name detection
-# Usage: dc <command> <project-or-container>  - finds and uses correct docker-compose.yml
-#        dc <command>                         - pass through to docker-compose in current directory
+# Smart docker-compose wrapper with project, container, or service name detection
+# Usage: dc <command> <project-or-container-or-service>  - finds and uses correct docker-compose.yml
+#        dc <command>                                     - pass through to docker-compose in current directory
 
 # Load project mappings from config
 PHOME="${PHOME:-/mnt/pool/appdata/home}"
 source "${PHOME}/.conf/dc-projects.conf" 2>/dev/null || {
     echo "Error: Could not load dc-projects.conf" >&2
+    return 1
+}
+
+# Function to find project by service name
+_find_project_by_service() {
+    local service_name="$1"
+    
+    # Search through DC_PROJECT_SERVICES to find which project has this service
+    for project in ${(k)DC_PROJECT_SERVICES}; do
+        local services=(${=DC_PROJECT_SERVICES[$project]})
+        if (( ${services[(I)$service_name]} )); then
+            echo "$project"
+            return 0
+        fi
+    done
+    
     return 1
 }
 
@@ -32,7 +48,7 @@ _find_project_by_container() {
     return 1
 }
 
-# Resolve name (could be project or container)
+# Resolve name (could be project, container, or service)
 _resolve_target() {
     local name="$1"
     
@@ -44,6 +60,13 @@ _resolve_target() {
     
     # Try to find it as a container name
     local project=$(_find_project_by_container "$name")
+    if [[ -n "$project" ]]; then
+        echo "$project"
+        return 0
+    fi
+    
+    # Try to find it as a service name
+    project=$(_find_project_by_service "$name")
     if [[ -n "$project" ]]; then
         echo "$project"
         return 0
@@ -61,7 +84,7 @@ if [[ -n "$2" ]]; then
     project=$(_resolve_target "$target")
     
     if [[ -z "$project" ]]; then
-        echo "Error: Unknown project or container: $target" >&2
+        echo "Error: Unknown project, container, or service: $target" >&2
         echo "Known projects: ${(j:, :)${(ko)DC_PROJECTS}}" >&2
         return 1
     fi
