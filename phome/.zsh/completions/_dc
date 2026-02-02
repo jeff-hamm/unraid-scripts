@@ -1,0 +1,63 @@
+#compdef dc
+
+# Completion for dc (smart docker-compose wrapper)
+
+_dc_completion() {
+    # Load project mappings from config
+    local PHOME="${PHOME:-/mnt/pool/appdata/home}"
+    source "${PHOME}/.conf/dc-projects.conf" 2>/dev/null || return 1
+    
+    # Build completion list from DC_PROJECTS
+    local -a projects
+    for project in ${(k)DC_PROJECTS}; do
+        projects+=("$project:Docker compose project")
+    done
+    
+    local -a docker_compose_commands
+    docker_compose_commands=(
+        'attach:Attach local standard input, output, and error streams to a service'\''s running container'
+        'build:Build or rebuild services'
+        'commit:Create a new image from a service container'\''s changes'
+        'config:Parse, resolve and render compose file in canonical format'
+        'cp:Copy files/folders between a service container and the local filesystem'
+        'create:Creates containers for a service'
+        'down:Stop and remove containers, networks'
+        'events:Receive real time events from containers'
+        'exec:Execute a command in a running container'
+        'export:Export a service container'\''s filesystem as a tar archive'
+        'images:List images used by the created containers'
+        'kill:Force stop service containers'
+        'logs:View output from containers'
+        'ls:List running compose projects'
+        'pause:Pause services'
+        'port:Print the public port for a port binding'
+        'ps:List containers'
+        'publish:Publish compose application'
+        'pull:Pull service images'
+        'push:Push service images'
+        'restart:Restart service containers'
+        'rm:Removes stopped service containers'
+        'run:Run a one-off command on a service'
+        'scale:Scale services'
+        'start:Start services'
+        'stats:Display a live stream of container(s) resource usage statistics'
+        'stop:Stop services'
+        'top:Display the running processes'
+        'unpause:Unpause services'
+        'up:Create and start containers'
+        'version:Show the Docker Compose version information'
+        'volumes:List volumes'
+        'wait:Block until containers of all (or specified) services stop'
+        'watch:Watch build context for service and rebuild/refresh containers when files are updated'
+    )
+    
+    if (( CURRENT == 2 )); then
+        # First argument: offer docker-compose commands
+        _describe 'docker-compose command' docker_compose_commands
+    elif (( CURRENT == 3 )); then
+        # Second argument: offer project names
+        _describe 'project' projects
+    fi
+}
+
+_dc_completion "$@"

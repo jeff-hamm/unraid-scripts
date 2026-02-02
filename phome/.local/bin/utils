@@ -1,0 +1,64 @@
+#!/usr/bin/env zsh
+# @desc Discover and run personal scripts and functions
+#   Utility wrapper - makes all personal scripts and functions discoverable
+#   Usage: utils [command] [args...]
+
+set -eo pipefail
+
+PHOME="${PHOME:-$HOME}"
+
+# Load parser library
+source "$PHOME/.zsh/lib/parse-utils.zsh"
+
+show_help() {
+    echo "Usage: utils [command] [args...]"
+    echo ""
+    echo "Discover and run personal scripts and functions."
+    echo ""
+    echo "Commands:"
+    echo "  <name>        Run a script from ~/.local/bin or function from ~/.zsh/functions/"
+    echo "  (no args)     List all available utilities with descriptions"
+    echo ""
+    echo "Available utilities:"
+    echo ""
+    
+    echo "Scripts (~/.local/bin):"
+    parse_script_descriptions | while IFS=$'\t' read -r name desc; do
+        [[ "$name" == "utils" ]] && continue
+        printf "  %-22s %s\n" "$name" "${desc:0:60}"
+    done | sort
+    
+    echo ""
+    echo "Functions (~/.zsh/functions/):"
+    parse_all_function_descriptions "$PHOME/.zsh/functions" | while IFS=$'\t' read -r name desc; do
+        printf "  %-22s %s\n" "$name" "${desc:0:60}"
+    done | sort
+    
+    echo ""
+    echo "Tip: Type 'utils <tab>' to see all commands with descriptions"
+}
+
+if [[ $# -eq 0 ]]; then
+    show_help
+    exit 0
+fi
+
+command="$1"
+shift
+
+# Source functions so we can call them
+for _func_file in "$PHOME/.zsh/functions/"*.zsh(N); do
+    [[ -f "$_func_file" ]] && source "$_func_file"
+done
+
+# Check if it's a function first
+if typeset -f "$command" > /dev/null 2>&1; then
+    "$command" "$@"
+# Then check if it's a script in .local/bin
+elif [[ -x "$PHOME/.local/bin/$command" ]]; then
+    exec "$PHOME/.local/bin/$command" "$@"
+else
+    echo "Error: Unknown utility '$command'" >&2
+    echo "Run 'utils' without arguments to see available commands" >&2
+    exit 1
+fi

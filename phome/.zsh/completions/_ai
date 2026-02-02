@@ -1,0 +1,39 @@
+#compdef ai
+
+# Completion for ai - GitHub Copilot CLI helper
+
+_ai() {
+    local curcontext="$curcontext" state line
+    
+    _arguments -C \
+        '1: :->command' \
+        '*::arg:->args'
+    
+    case $state in
+        command)
+            local -a commands
+            commands=(
+                'autocomplete:Generate @desc header for a script or function file'
+                'commit:Generate commit message and run git commit'
+                'help:Show help message'
+            )
+            _describe 'command' commands
+            ;;
+        args)
+            case $words[1] in
+                autocomplete|ac)
+                    _arguments \
+                        '*:file:_files'
+                    ;;
+                commit|c)
+                    _arguments \
+                        '(--all -a)'{--all,-a}'[Stage all changes before committing]' \
+                        '(--push -p)'{--push,-p}'[Push after committing]' \
+                        '-ap[Stage all changes and push]'
+                    ;;
+            esac
+            ;;
+    esac
+}
+
+_ai "$@"

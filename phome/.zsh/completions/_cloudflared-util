@@ -1,0 +1,44 @@
+#compdef cloudflared-util
+
+_cloudflared-util() {
+    local -a commands
+    commands=(
+        'add:Add a new hostname to cloudflared tunnel'
+        'remove:Remove a hostname from cloudflared tunnel'
+        'list:List all configured hostnames'
+        'reload:Reload cloudflared configuration'
+        'start:Start cloudflared service'
+        'stop:Stop cloudflared service'
+        'restart:Restart cloudflared service'
+        'status:Show cloudflared service status'
+        'logs:Show cloudflared logs'
+    )
+
+    _arguments -C \
+        '1: :->command' \
+        '*:: :->args' \
+        && return 0
+
+    case $state in
+        command)
+            _describe 'command' commands
+            ;;
+        args)
+            case $words[1] in
+                add)
+                    _arguments \
+                        '1:hostname:' \
+                        '2:service_url:' \
+                        '3:path:()'
+                    ;;
+                remove)
+                    _message 'hostname to remove'
+                    ;;
+                *)
+                    ;;
+            esac
+            ;;
+    esac
+}
+
+_cloudflared-util "$@"

@@ -1,0 +1,49 @@
+#compdef utils
+
+# Completion for utils wrapper - dynamically discover scripts and functions
+# Parses @desc comments from both script files and function definitions
+
+local -a utilities
+local PHOME="${PHOME:-$HOME}"
+local name desc
+
+# Load parser library
+source "$PHOME/.zsh/lib/parse-utils.zsh" 2>/dev/null || return 1
+
+# Parse script descriptions - tab-separated lines: name\tdescription
+# Use process substitution to avoid subshell issue
+while IFS=$'\t' read -r name desc; do
+    [[ "$name" == "utils" ]] && continue
+    utilities+=("${name}:${desc}")
+done < <(parse_script_descriptions)
+
+# Parse function descriptions - tab-separated lines: name\tdescription
+while IFS=$'\t' read -r name desc; do
+    utilities+=("${name}:${desc}")
+done < <(parse_all_function_descriptions "$PHOME/.zsh/functions")
+
+if (( CURRENT == 2 )); then
+    # First argument - show all utilities
+    _describe 'personal utilities' utilities
+else
+    # Subsequent arguments - delegate to the actual command's completion
+    local cmd="$words[2]"
+    local -a cmd_args
+    cmd_args=("${words[@]:2}")
+    
+    # Invoke the command's completion function directly
+    local compfunc="_${cmd}"
+    if (( $+functions[$compfunc] )); then
+        # Temporarily adjust words and CURRENT for the delegated completion
+        local -a original_words
+        original_words=("${words[@]}")
+        words=("$cmd" "${cmd_args[@]}")
+        (( CURRENT -= 1 ))
+        $compfunc
+        # Restore original context
+        words=("${original_words[@]}")
+    else
+        # Fallback to file completion
+        _files
+    fi
+fi

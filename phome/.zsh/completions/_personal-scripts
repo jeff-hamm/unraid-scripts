@@ -1,0 +1,40 @@
+#compdef stop-array add-cloudflare-host app-envs sync-to-git
+
+# Generic completion for personal scripts in ~/.local/bin that don't have dedicated completion files
+# This provides helpful context and basic completion for all your custom scripts
+# Note: dc, lnp, cloudflared-util, and phome-sync-to-git have their own _* completion files
+
+local -a scripts
+local script="$words[1]"
+
+# Get all executable scripts from .local/bin (excluding .sh extensions shown)
+scripts=(${(f)"$(find ${PHOME:-$HOME}/.local/bin -maxdepth 1 -type f -executable 2>/dev/null | xargs -n1 basename | grep -v '\.sh$')"})
+
+case "$script" in
+    stop-array)
+        _message 'stop-array: Stops mover (if running) then stops the array and tails the log'
+        ;;
+    
+    add-cloudflare-host)
+        _message 'add-cloudflare-host: Add/manage Cloudflare tunnel hosts'
+        ;;
+    
+    app-envs)
+        _message 'app-envs: Source this to load application environment variables'
+        ;;
+    
+    cloudflared-util)
+        _message 'cloudflared-util: Manage Cloudflare tunnel configuration'
+        ;;
+    
+    sync-to-git)
+        _message 'sync-to-git: Generic git sync utility'
+        ;;
+    
+    *)
+        # For any other personal script, just show it exists
+        _message "$script: Personal utility script"
+        ;;
+esac
+
+return 0

@@ -1,0 +1,36 @@
+#compdef lnp
+
+_lnp() {
+    local -a commands
+    commands=(
+        '-h:Show help message'
+        '--help:Show help message'
+        '-l:List all configured symlinks'
+        '--list:List all configured symlinks'
+        '-a:Apply all symlinks from config'
+        '--apply:Apply all symlinks from config'
+        '-p:Persist symlink to config'
+        '--persist:Persist symlink to config'
+    )
+
+    _arguments -C \
+        '1: :->source' \
+        '2: :->target' \
+        '*:: :->flags' \
+        && return 0
+
+    case $state in
+        source)
+            _arguments "${commands[@]}"
+            _files
+            ;;
+        target)
+            _files
+            ;;
+        flags)
+            _arguments "${commands[@]}"
+            ;;
+    esac
+}
+
+_lnp "$@"

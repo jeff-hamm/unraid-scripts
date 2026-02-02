@@ -1,0 +1,37 @@
+#!/usr/bin/env zsh
+# @desc Docker compose wrapper with project shortcuts
+# Smart docker-compose wrapper with project name detection
+# Usage: dc <command> <name>  - automatically finds and uses correct docker-compose.yml
+#        dc <command>          - pass through to docker-compose in current directory
+
+# Load project mappings from config
+PHOME="${PHOME:-/mnt/pool/appdata/home}"
+source "${PHOME}/.conf/dc-projects.conf" 2>/dev/null || {
+    echo "Error: Could not load dc-projects.conf" >&2
+    return 1
+}
+
+# Check if second arg is a known project name
+if [[ -n "$2" && -n "${DC_PROJECTS[$2]}" ]]; then
+    command="$1"
+    project="$2"
+    shift 2
+    local original_dir="$PWD"
+    cd "${DC_PROJECTS[$project]}" || {
+        echo "Error: Directory not found: ${DC_PROJECTS[$project]}" >&2
+        return 1
+    }
+    if [[ "$command" == "up" ]]; then
+        docker-compose up -d "$@"
+        local exit_code=$?
+        [[ $exit_code -eq 0 ]] && docker-compose logs -f
+    else
+        docker-compose "$command" "$@"
+    fi
+    local exit_code=$?
+    cd "$original_dir"
+    return $exit_code
+else
+    # Pass through to docker-compose in current directory
+    docker-compose "$@"
+fi

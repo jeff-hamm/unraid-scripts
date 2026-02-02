@@ -1,0 +1,14 @@
+#compdef phome-sync-to-git
+
+_phome-sync-to-git() {
+    _arguments -C \
+        '--dry-run[Show what would change without making changes]' \
+        '--no-commit[Do not create a git commit]' \
+        '--no-push[Do not push to origin]' \
+        '(-m --message)'{-m,--message}'[Commit message]:message:' \
+        '--phome[Source PHOME path]:path:_directories' \
+        '--repo[unraid-scripts repo path]:path:_directories' \
+        '(-h --help)'{-h,--help}'[Show help message]'
+}
+
+_phome-sync-to-git "$@"

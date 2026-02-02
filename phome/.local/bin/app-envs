@@ -1,0 +1,171 @@
+#!/usr/bin/env zsh
+# @desc Load application environment variables
+# app-envs - Load application environment variables (zsh version)
+# 
+# Usage:
+#   Source it:  . app-envs [PHOME] [APP_ROOT]
+#   Or call it: eval "$(app-envs [PHOME] [APP_ROOT])"
+#
+# Arguments:
+#   $1 or -p|--phome|--home|-h  PHOME path
+#   $2 or -r|--root             APP_ROOT path
+#   -s|--source                 Custom .env path to try first
+#
+# Environment discovery order (if PHOME not set):
+#   1. Custom .env path (if -s specified)
+#   2. Calling script's directory .env
+#   3. Crawl parent directories for .env
+#   4. ~/.env
+#   5. /mnt/pool/appdata/home/.env
+#
+# Once PHOME is set, sources $PHOME/.env and exports all variables.
+
+_app_envs_main() {
+    local arg_phome=""
+    local arg_root=""
+    local arg_source=""
+    local is_sourced=0
+    
+    # Check if we're being sourced (vs executed)
+    # In zsh: $ZSH_EVAL_CONTEXT contains 'file' when sourced
+    if [[ -n "${ZSH_EVAL_CONTEXT:-}" ]]; then
+        [[ "$ZSH_EVAL_CONTEXT" == *:file:* ]] && is_sourced=1
+    elif [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+        [[ "${BASH_SOURCE[0]}" != "${0}" ]] && is_sourced=1
+    fi
+    
+    # Parse arguments (only if executed, not when sourced to avoid inheriting caller's $1)
+    if [[ $is_sourced -eq 0 ]]; then
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                -p|--phome|--home|-h)
+                    arg_phome="$2"
+                    shift 2
+                    ;;
+                -r|--root)
+                    arg_root="$2"
+                    shift 2
+                    ;;
+                -s|--source)
+                    arg_source="$2"
+                    shift 2
+                    ;;
+                -*)
+                    echo "Unknown option: $1" >&2
+                    return 1
+                    ;;
+                *)
+                    # Positional arguments
+                    if [[ -z "$arg_phome" ]]; then
+                        arg_phome="$1"
+                    elif [[ -z "$arg_root" ]]; then
+                        arg_root="$1"
+                    fi
+                    shift
+                    ;;
+            esac
+        done
+    fi
+    
+    # Apply argument overrides
+    [[ -n "$arg_root" ]] && APP_ROOT="$arg_root"
+    [[ -n "$arg_phome" ]] && PHOME="$arg_phome"
+    
+    # If PHOME still not set, search for .env files
+    if [[ -z "${PHOME:-}" ]]; then
+        # Try custom source first
+        if [[ -n "$arg_source" && -f "$arg_source" ]]; then
+            # shellcheck disable=SC1090
+            . "$arg_source"
+        fi
+        
+        # If still not set, search from calling script's directory
+        if [[ -z "${PHOME:-}" ]]; then
+            local search_dir=""
+            
+            # Get calling script's directory
+            if [[ -n "${funcfiletrace[1]:-}" ]]; then
+                # zsh: funcfiletrace gives file:line of caller
+                search_dir="${funcfiletrace[1]%:*}"
+                search_dir="${search_dir:h}"
+            elif [[ -n "${BASH_SOURCE[1]:-}" ]]; then
+                # bash fallback
+                search_dir="$(cd "$(dirname "${BASH_SOURCE[1]}")" 2>/dev/null && pwd)"
+            elif [[ -n "${0:-}" && "$0" != "-zsh" && "$0" != "zsh" && "$0" != "-bash" && "$0" != "bash" ]]; then
+                search_dir="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
+            else
+                search_dir="$PWD"
+            fi
+            
+            # Crawl up to find .env
+            while [[ -n "$search_dir" && "$search_dir" != "/" ]]; do
+                if [[ -f "$search_dir/.env" ]]; then
+                    source "$search_dir/.env"
+                    break
+                fi
+                search_dir="${search_dir:h}"
+            done
+        fi
+    fi
+    
+    # Try ~/.env if still not set
+    if [[ -z "${PHOME:-}" && -f "$HOME/.env" ]]; then
+        source "$HOME/.env"
+    fi
+    
+    # Try hardcoded default if still not set
+    if [[ -z "${PHOME:-}" && -f "/mnt/pool/appdata/home/.env" ]]; then
+        source "/mnt/pool/appdata/home/.env"
+    fi
+    
+    # Set defaults if still not set
+    APP_ROOT="${APP_ROOT:-/mnt/pool/appdata}"
+    PHOME="${PHOME:-$APP_ROOT/home}"
+    REPO_DIR="${REPO_DIR:-$APP_ROOT/unraid-scripts}"
+    
+    # Source $PHOME/.env if it exists and export all variables
+    if [[ -f "$PHOME/.env" ]]; then
+        set -a  # Auto-export all variables
+        source "$PHOME/.env"
+        set +a
+    fi
+    
+    # Always export core variables
+    export APP_ROOT PHOME REPO_DIR
+}
+
+# Helper to detect if sourced
+_is_sourced() {
+    if [[ -n "${ZSH_EVAL_CONTEXT:-}" ]]; then
+        [[ "$ZSH_EVAL_CONTEXT" == *:file:* ]] && return 0
+    elif [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+        [[ "${BASH_SOURCE[0]}" != "${0}" ]] && return 0
+    fi
+    return 1
+}
+
+# Detect if sourced or executed
+if ! _is_sourced; then
+    # Executed directly - output export commands for eval
+    _app_envs_main "$@"
+    # Only output exports if explicitly running for eval, not when called from scripts
+    if [[ -t 1 ]] || [[ "${1:-}" == "--export" ]]; then
+        echo "export APP_ROOT='$APP_ROOT'"
+        echo "export PHOME='$PHOME'"
+        echo "export REPO_DIR='$REPO_DIR'"
+        # Also output other exported vars from .env (skip core vars already printed)
+        if [[ -f "$PHOME/.env" ]]; then
+            grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$PHOME/.env" 2>/dev/null | while IFS='=' read -r var_name _; do
+                # Skip core vars and comments
+                [[ -z "$var_name" || "$var_name" == \#* ]] && continue
+                [[ "$var_name" =~ ^(APP_ROOT|PHOME|REPO_DIR|PATH)$ ]] && continue
+                # Get the actual exported value using zsh's (P) parameter expansion
+                local actual_value="${(P)var_name:-}"
+                [[ -n "$actual_value" ]] && echo "export $var_name='$actual_value'"
+            done
+        fi
+    fi
+else
+    # Sourced - just run the function, no output
+    _app_envs_main "$@"
+fi
