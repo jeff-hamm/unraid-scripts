@@ -2,99 +2,87 @@
 
 # Completion for dc (smart docker-compose wrapper)
 
-_dc_completion() {
-    # Load project mappings from config
+_dc() {
     local PHOME="${PHOME:-/mnt/pool/appdata/home}"
     source "${PHOME}/.conf/dc-projects.conf" 2>/dev/null || return 1
     
-    # Build completion list from DC_PROJECTS
-    local -a projects
-    for project in ${(k)DC_PROJECTS}; do
-        projects+=("$project:Docker compose project")
-    done
-    
-    # Build service names from all projects
-    local -a services
-    if (( CURRENT == 3 )); then
-        for project in ${(k)DC_PROJECT_SERVICES}; do
-            local project_services=(${=DC_PROJECT_SERVICES[$project]})
-            for service in $project_services; do
-                services+=("$service:Service in $project")
-            done
-        done
-    fi
-    
-    # Build container names from running containers (only those in our projects)
-    local -a containers
-    if (( CURRENT == 3 )); then
-        # Get containers that belong to our compose projects
-        for project in ${(k)DC_PROJECTS}; do
-            local project_containers=($(docker ps --filter "label=com.docker.compose.project=$project" --format '{{.Names}}' 2>/dev/null))
-            for container in $project_containers; do
-                containers+=("$container:Container in $project")
-            done
-        done
-    fi
-    
-    local -a docker_compose_commands
-    docker_compose_commands=(
-        'attach:Attach local standard input, output, and error streams to a service'\''s running container'
+    local -a docker_compose_commands=(
+        'attach:Attach to a running container'
         'build:Build or rebuild services'
-        'commit:Create a new image from a service container'\''s changes'
-        'config:Parse, resolve and render compose file in canonical format'
-        'cp:Copy files/folders between a service container and the local filesystem'
-        'create:Creates containers for a service'
-        'down:Stop and remove containers, networks'
-        'events:Receive real time events from containers'
-        'exec:Execute a command in a running container'
-        'export:Export a service container'\''s filesystem as a tar archive'
-        'images:List images used by the created containers'
-        'kill:Force stop service containers'
-        'logs:View output from containers'
-        'ls:List running compose projects'
+        'config:Parse and render compose file'
+        'create:Create containers'
+        'down:Stop and remove containers'
+        'exec:Execute command in container'
+        'images:List images'
+        'kill:Force stop containers'
+        'logs:View container logs'
+        'ls:List running projects'
         'pause:Pause services'
-        'port:Print the public port for a port binding'
         'ps:List containers'
-        'publish:Publish compose application'
-        'pull:Pull service images'
-        'push:Push service images'
-        'restart:Restart service containers'
-        'rm:Removes stopped service containers'
-        'run:Run a one-off command on a service'
-        'scale:Scale services'
+        'pull:Pull images'
+        'push:Push images'
+        'restart:Restart containers'
+        'rm:Remove stopped containers'
+        'run:Run one-off command'
         'start:Start services'
-        'stats:Display a live stream of container(s) resource usage statistics'
         'stop:Stop services'
-        'top:Display the running processes'
+        'top:Display running processes'
         'unpause:Unpause services'
         'up:Create and start containers'
-        'version:Show the Docker Compose version information'
-        'volumes:List volumes'
-        'wait:Block until containers of all (or specified) services stop'
-        'watch:Watch build context for service and rebuild/refresh containers when files are updated'
+        'version:Show version'
     )
     
-    if (( CURRENT == 2 )); then
-        # First argument: offer docker-compose commands
-        _describe 'docker-compose command' docker_compose_commands
-    elif (( CURRENT == 3 )); then
-        # Second argument: offer project names, service names, and container names
-        if [[ ${#containers[@]} -gt 0 ]]; then
-            _describe 'project, service, or container' projects services containers
-        else
-            _describe 'project or service' projects services
-        fi
-    elif (( CURRENT >= 4 )); then
-        # Additional arguments: offer services for the selected project
-        local project="${words[3]}"
-        if [[ -n "${DC_PROJECT_SERVICES[$project]}" ]]; then
-            local -a services
-            for service in ${=DC_PROJECT_SERVICES[$project]}; do
-                services+=("$service")
+    case $CURRENT in
+        2)
+            _describe -t commands 'command' docker_compose_commands
+            ;;
+        3)
+            # Projects
+            local -a projects
+            for p in ${(k)DC_PROJECTS}; do
+                projects+=("$p")
             done
-            _describe 'service' services
-        fi
-    fi
+            
+            # Services - deduplicated, show parent project
+            local -a services
+            local -A seen
+            for p in ${(k)DC_PROJECT_SERVICES}; do
+                for s in ${=DC_PROJECT_SERVICES[$p]}; do
+                    if [[ -z "${seen[$s]}" ]]; then
+                        seen[$s]=1
+                        services+=("$s:($p)")
+                    fi
+                done
+            done
+            
+            _describe -t projects 'project' projects
+            _describe -t services 'service' services
+            ;;
+        *)
+            # After project/service, offer services from that project
+            local target="${words[3]}"
+            local project=""
+            
+            if [[ -n "${DC_PROJECTS[$target]}" ]]; then
+                project="$target"
+            else
+                for p in ${(k)DC_PROJECT_SERVICES}; do
+                    if [[ " ${DC_PROJECT_SERVICES[$p]} " == *" $target "* ]]; then
+                        project="$p"
+                        break
+                    fi
+                done
+            fi
+            
+            if [[ -n "$project" && -n "${DC_PROJECT_SERVICES[$project]}" ]]; then
+                local -a svcs
+                for s in ${=DC_PROJECT_SERVICES[$project]}; do
+                    svcs+=("$s")
+                done
+                _describe -t services 'service' svcs
+            fi
+            ;;
+    esac
 }
 
-_dc_completion "$@"
+_dc "$@"

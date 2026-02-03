@@ -23,11 +23,9 @@ fpath=($HOME/.zsh/completions $fpath)
 
 # Completion display settings (before loading Oh My Zsh)
 zstyle ':completion:*' verbose yes
-#zstyle ':completion:*:warnings' format '%F{red}-- no matches --%f'
-#zstyle ':completion:*:messages' format '%F{cyan}-- %d --%f'
-zstyle ':completion:*' menu select  # Enable arrow key navigation
-#zstyle ':completion:*' list-prompt ''
-#zstyle ':completion:*' select-prompt ''
+zstyle ':completion:*' menu select                              # Arrow key navigation
+zstyle ':completion:*' group-name ''                            # Group by tag
+zstyle ':completion:*:descriptions' format '%F{yellow}── %d ──%f'  # Group headers
 
 # Auto-display completions
 setopt AUTO_MENU           # Show completion menu on successive tab press
@@ -38,9 +36,45 @@ source $ZSH/oh-my-zsh.sh
 
 # === User Configuration ===
 
-# Custom prompt: username@hostname: + robbyrussell theme
-# ' $(git_prompt_info)'
-PROMPT="%(?:%{$fg_bold[green]%}%1{↑%} :%{$fg_bold[red]%}%1{↑%} )%{$fg[yellow]%}%m:%{$reset_color%}%{$fg[cyan]%}%d%{$reset_color%} %{$fg_bold[white]%}%#%{$reset_color%} "
+# Combined status indicator for prompt
+prompt_status() {
+    local exit_code=$?
+    
+    # Priority 1: Show red up arrow on command failure
+    if [[ $exit_code -ne 0 ]]; then
+        echo "%{$fg_bold[red]%}%1{↑%}%{$reset_color%}"
+    # Priority 2: Check git status
+    elif git rev-parse --git-dir > /dev/null 2>&1; then
+        if [[ -n $(git status --porcelain 2>/dev/null) ]]; then
+            # Git repo with changes: yellow *
+            echo "%{$fg_bold[black]%}+%{$reset_color%}"
+        else
+            # Git repo clean: green checkmark
+            echo "%{$fg[black]%}✓%{$reset_color%}"
+        fi
+    # Priority 3: No error, not in git
+    else
+        printf '·'
+    fi
+}
+
+# Custom prompt
+
+# Default prompt for all users
+# Show user@hostname only when su'd to a different user
+# Track original login user in a persistent variable
+if [[ -z "$ORIGINAL_USER" ]]; then
+    export ORIGINAL_USER="$USER"
+fi
+
+if [[ "$USER" != "$ORIGINAL_USER" ]]; then
+    # We've su'd to a different user - show user@hostname
+PROMPT='$(prompt_status) %{$fg[black]%}%n@%m:%{$reset_color%}%{$fg_bold[cyan]%}%d%{$reset_color%} %{$fg[white]%}%#%{$reset_color%} '
+else
+    # Original login user - just show hostname
+    PROMPT='$(prompt_status) %{$fg[black]%}%m:%{$reset_color%}%{$fg_bold[cyan]%}%d%{$reset_color%} %{$fg[white]%}%#%{$reset_color%} '
+fi
+setopt PROMPT_SUBST
 
 # Don't source /etc/profile - it overrides Oh My Zsh's PS1
 # PATH is already set via /etc/profile.d/phome-path.sh (created by boot.d)

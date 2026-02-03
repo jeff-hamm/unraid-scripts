@@ -27,7 +27,7 @@
 | `~/.local/opt/bin/` | External binaries (gitignored, in PATH) |
 | `~/docs/` | Documentation (symlinked to `$PHOME/docs`) |
 
-- **Shell**: zsh + Oh My Zsh (robbyrussell theme)
+- **Shell**: zsh + Oh My Zsh
 - **Git repo**: `/root/appdata/unraid-scripts` with `$PHOME` bind-mounted at `phome/`
 
 ## Scripts & Functions
